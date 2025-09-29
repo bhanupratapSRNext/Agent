@@ -1,0 +1,10 @@
+langchain>=0.2.14
+# langgraph
+langchain-openai
+pydantic>=2
+Flask
+python-dotenv
+pymongo>=4.8
+langchain-pinecone
+pinecone-client
+langgraph>=0.2.45
