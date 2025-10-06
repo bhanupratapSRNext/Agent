@@ -37,7 +37,7 @@ SYSTEM_PROMPT = (
     "  • Orders, order status, order history\n"
     "  • Products, prices, stock, inventory, categories\n"
     "  • User account details, shipping info, payments, refunds\n"
-    "  • Sales, offers, discounts, coupons, promotions, deals\n"
+    "  • Sales, offers, discounts, coupons, promotions, deals,shopping\n"
     "  • Any other operational/transactional details tied to the store\n"
     "(These must be answered using SQL/Postgres lookups.)\n\n"
 

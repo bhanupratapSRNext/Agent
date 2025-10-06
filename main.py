@@ -1,45 +1,75 @@
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from dotenv import load_dotenv
 import os
+import uuid
+from dotenv import load_dotenv
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from agent.memory import RollingMemory
 from agent.tools.vector_pinecone import VectorRetriever
 from agent.tools.sql_postgres import SQLTool
-# from agent.tools.mongo_tool import MongoTool
-# from agent.router.intent import classify_intent
-# from agent.router.response_builder import build_answer
 
-from acp.routers.agents import router as acp_agents_router
-from acp.routers.runs import router as acp_runs_router
+# Import ACP configuration
+from acp_config import ACPConfig
 
-# Load env
+# Import the EcommerceAgent class
+from agent.ecommerce_agent import EcommerceAgent
+
+# Import route manager
+from routes.route_manager import setup_routes
+
+# Load environment variables
 load_dotenv()
 
-
-# Initialize FastAPI
-app = FastAPI(title="Agent Recommendation Service", version="1.0.0")
-
-# Allow CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
+# Initialize FastAPI with ACP SDK
+app = FastAPI(
+    title="E-commerce Agent Service (ACP SDK)",
+    version="2.0.0",
+    description="ACP-compliant e-commerce agent service with RAG and SQL capabilities",
+    docs_url="/docs",
+    redoc_url="/redoc"
 )
 
+# CORS middleware with configuration
+app.add_middleware(
+    CORSMiddleware,
+    **ACPConfig.get_cors_config()
+)
 
-app.include_router(acp_agents_router)
-app.include_router(acp_runs_router)
+# Initialize your business logic components 
+memory = RollingMemory(window_size=ACPConfig.MEMORY_WINDOW)
+retriever = VectorRetriever()
+sql_tool = SQLTool()
 
+# Initialize the agent
+ecommerce_agent = EcommerceAgent()
 
+# Setup all routes with dependencies
+setup_routes(app, ecommerce_agent, memory)
+
+# Main service endpoint
 @app.get("/")
 def home():
-    return {"message": "welcome to the Agent"}
-
+    """Service information endpoint"""
+    return {
+        "service": "E-commerce Agent Service (ACP SDK)",
+        "version": "2.0.0",
+        "acp_compliant": True,
+        "agents": [ecommerce_agent.name],
+        "capabilities": ["intent_classification", "rag_retrieval", "sql_querying", "response_composition"],
+        "configuration": {
+            "max_context_length": ACPConfig.AGENT_MAX_CONTEXT_LENGTH,
+            "timeout_seconds": ACPConfig.AGENT_TIMEOUT_SECONDS,
+            "rate_limiting": ACPConfig.ENABLE_RATE_LIMITING,
+            "authentication": ACPConfig.ENABLE_AUTHENTICATION
+        }
+    }
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8080, reload=True)
+    uvicorn.run(
+        "main:app", 
+        host="0.0.0.0", 
+        port=ACPConfig.SERVER_PORT, 
+        reload=ACPConfig.UVICORN_RELOAD,
+        log_level=ACPConfig.UVICORN_LOG_LEVEL
+    )
