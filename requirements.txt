@@ -24,3 +24,4 @@ tiktoken
 
 
 google-generativeai
+acp-sdk-python
