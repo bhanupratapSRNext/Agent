@@ -18,7 +18,7 @@ class Message(BaseModel):
     parts: List[MessagePart]
 
 class RunCreateRequest(BaseModel):
-    agent_name: Optional[str] = "ecommerce-router"
+    agent_name: Optional[str] = "ecommerce-magentic-one"
     input: List[Message]
     session_id: Optional[str] = None
     mode: Optional[str] = "sync"
@@ -50,19 +50,8 @@ async def create_run(request: RunCreateRequest, background_tasks: BackgroundTask
         # Generate session ID
         session_id = request.session_id or str(uuid.uuid4())
         
-        # Execute the agent directly (bypassing ACP SDK Run object)
-        if request.mode == "async":
-            # For async mode, execute in background
-            background_tasks.add_task(ecommerce_agent.execute_direct, request, session_id)
-            return {
-                "run_id": str(uuid.uuid4()),
-                "status": "created",
-                "message": "Run created and will execute asynchronously"
-            }
-        else:
-            # For sync mode, execute immediately
-            result = await ecommerce_agent.execute_direct(request, session_id)
-            return result
+        result = await ecommerce_agent.execute_direct(request, session_id)
+        return result
         
     except HTTPException:
         raise

@@ -1,13 +1,10 @@
 import uuid
+import asyncio
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 
-# Import your existing business logic (preserved)
-from agent.memory import RollingMemory
-from agent.tools.vector_pinecone import VectorRetriever
-from agent.tools.sql_postgres import SQLTool
-from agent.intent import classify_intent
-from agent.response_builder import build_answer
+# Import Optimized Magentic-One implementation
+from agent.magentic_one import MagenticAgent
 
 # Import ACP configuration
 from acp_config import ACPConfig
@@ -15,81 +12,96 @@ from acp_config import ACPConfig
 
 class EcommerceAgent:
     """
-    ACP-compliant E-commerce Agent
-    Preserves all your existing business logic while leveraging ACP SDK features
+    ACP-compliant E-commerce Agent powered by Microsoft's Magentic-One
+    
+    This agent uses Magentic-One's orchestrator to automatically route queries
+    to specialized agents (RAG and SQL) without manual intent classification.
     """
     
     def __init__(self):
-        self.name = "ecommerce-router"
-        self.description = "Intelligent e-commerce agent that routes queries to RAG or SQL handlers"
+        self.name = "ecommerce-magentic-one"
+        self.description = "Intelligent e-commerce agent powered by Microsoft's Magentic-One multi-agent orchestrator"
         self.agent_config = ACPConfig.get_agent_config()
         self._run_cache = {}  # Simple in-memory cache for runs
+        
+        # Get API key from environment
+        import os
+        self.api_key = os.getenv("OPENAI_API_KEY")
+        if not self.api_key:
+            raise ValueError("OPENAI_API_KEY environment variable is required")
+        
+        # Initialize the Magentic-One agent system
+        self.magentic_agent = None  # Will be initialized async
+    
+    async def _ensure_agent_initialized(self):
+        """Lazy initialization of Ultra-Fast Magentic-One agent (async)"""
+        if self.magentic_agent is None:
+            self.magentic_agent = MagenticAgent(
+                api_key=self.api_key,
+                max_turns=2,  # Reduced for faster responses
+                enable_cache=True  # Enable caching
+            )
     
     async def execute_direct(self, request, session_id):
         """
-        Execute the agent directly with request data (bypassing ACP SDK Run object issues)
+        Execute the agent directly with request data using Magentic-One
+        
+        Args:
+            request: The request object containing user input
+            session_id: Session identifier for memory management
+            
+        Returns:
+            Response dictionary in ACP format
         """
         try:
-            # Extract user input directly from request
+            # Ensure agent is initialized
+            await self._ensure_agent_initialized()
+            
+            # Extract user input from request
             user_text = request.input[0].parts[0].content if request.input and request.input[0].parts else ""
             
             if not user_text.strip():
                 raise ValueError("Empty user input provided")
             
-            # Preserve your existing intent classification logic
-            intent = classify_intent(user_text)
+            print(f"[Agent] Processing query: '{user_text}' for session: {session_id}")
             
-            # Preserve your existing routing logic with enhanced metadata
+            # Use Magentic-One to automatically orchestrate the agents
+            result = await self.magentic_agent.query(user_text)
+            
+            # Extract data from the result
+            answer = result["response"]
+            metadata = {
+                "execution_time_ms": result.get("execution_time", 0),
+                "route": result.get("route", "unknown"),
+                "cached": result.get("cached", False)
+            }
+            
+            # Create routing info for metadata
             routing_info = {
-                "intent": intent,
                 "session_id": session_id,
                 "timestamp": self._now_iso(),
+                "orchestrator": "MagenticOne",
                 "agent_config": {
                     "top_k": self.agent_config["default_top_k"],
                     "relevance_threshold": self.agent_config["default_relevance"]
-                }
+                },
+                "metadata": metadata
             }
             
-            # Route based on intent (preserved from your original logic)
-            if intent == "Ecommerce_Data":
-                chosen_agent = "ecommerce-data"
-                answer = await self._run_ecommerce_data(session_id, user_text)
-            elif intent == "Ecommerce_Info":
-                chosen_agent = "ecommerce-info"
-                answer = await self._run_ecommerce_info(session_id, user_text)
-            else:
-                # Fallback logic (preserved)
-                chosen_agent = "ecommerce-info"
-                routing_info["note"] = "fallback_default_info"
-                answer = await self._run_ecommerce_info(session_id, user_text)
-            
-            routing_info["routed_to"] = chosen_agent
-            routing_info["confidence"] = 0.9 if intent != "Unknown" else 0.5
-            
-            # Update memory (preserved logic)
-            from agent.memory import RollingMemory
-            memory = RollingMemory(window_size=ACPConfig.MEMORY_WINDOW)
-            memory.append(session_id, "user", user_text)
-            memory.append(session_id, "assistant", answer)
-            
-            # Create response in the format your frontend expects
+            # Create response in ACP format
             response = {
                 "run_id": str(uuid.uuid4()),
-                "agent_name": "ecommerce-router",
+                "agent_name": self.name,
                 "session_id": session_id,
                 "status": "completed",
                 "output": [
                     {
-                        "role": f"agent/{chosen_agent}",
+                        "role": "agent/magentic-one",
                         "parts": [
                             {
                                 "content_type": "text/plain",
                                 "content": answer,
-                                "metadata": {
-                                    "intent": intent,
-                                    "agent": chosen_agent,
-                                    "confidence": routing_info["confidence"]
-                                }
+                                "metadata": routing_info
                             }
                         ]
                     }
@@ -102,228 +114,154 @@ class EcommerceAgent:
             
         except Exception as e:
             # Error handling
+            print(f"[EcommerceAgent] Error: {str(e)}")
             return {
                 "run_id": str(uuid.uuid4()),
-                "agent_name": "ecommerce-router",
+                "agent_name": self.name,
                 "session_id": session_id,
                 "status": "failed",
-                "error": {
-                    "code": "AGENT_EXECUTION_ERROR",
-                    "message": str(e),
-                    "details": {
-                        "agent": "ecommerce-router",
-                        "session_id": session_id,
-                        "timestamp": self._now_iso()
+                "error": str(e),
+                "output": [
+                    {
+                        "role": "agent/error",
+                        "parts": [
+                            {
+                                "content_type": "text/plain",
+                                "content": f"I apologize, but I encountered an error: {str(e)}",
+                                "metadata": {"error": str(e)}
+                            }
+                        ]
                     }
-                },
+                ],
                 "created_at": self._now_iso(),
                 "finished_at": self._now_iso()
             }
-
-    async def execute(self, run):
+    
+    async def execute(self, request):
         """
-        Execute the agent with full ACP compliance and preserved business logic
+        Legacy execute method for backward compatibility
+        
+        Args:
+            request: The request object
+            
+        Returns:
+            Response dictionary
+        """
+        # Generate session ID if not provided
+        session_id = getattr(request, 'session_id', None) or str(uuid.uuid4())
+        return await self.execute_direct(request, session_id)
+    
+    async def execute_streaming(self, request, session_id):
+        """
+        Execute with streaming response (async generator)
+        
+        Args:
+            request: The request object
+            session_id: Session identifier
+            
+        Yields:
+            Response chunks as they become available
         """
         try:
-            # Update run status to in-progress
-            run.status = run.status.IN_PROGRESS
+            # Ensure agent is initialized
+            await self._ensure_agent_initialized()
             
-            # Extract and validate input
-            user_text = self._extract_user_input(run)
-            session_id = run.session_id or str(uuid.uuid4())
+            # Extract user input
+            user_text = request.input[0].parts[0].content if request.input and request.input[0].parts else ""
             
             if not user_text.strip():
                 raise ValueError("Empty user input provided")
             
-            # Preserve your existing intent classification logic
-            intent = classify_intent(user_text)
+            print(f"[EcommerceAgent] Processing query (streaming): '{user_text}'")
             
-            # Preserve your existing routing logic with enhanced metadata
-            routing_info = {
-                "intent": intent,
+            # Use Magentic-One streaming
+            async for chunk in self.magentic_agent.execute_streaming(session_id, user_text):
+                yield {
+                    "chunk": chunk,
+                    "session_id": session_id,
+                    "timestamp": self._now_iso()
+                }
+                
+        except Exception as e:
+            yield {
+                "chunk": f"Error: {str(e)}",
                 "session_id": session_id,
-                "timestamp": self._now_iso(),
-                "agent_config": {
-                    "top_k": self.agent_config["default_top_k"],
-                    "relevance_threshold": self.agent_config["default_relevance"]
-                }
+                "error": str(e),
+                "timestamp": self._now_iso()
             }
-            
-            # Route based on intent (preserved from your original logic)
-            if intent == "Ecommerce_Data":
-                chosen_agent = "ecommerce-data"
-                answer = await self._run_ecommerce_data(session_id, user_text)
-            elif intent == "Ecommerce_Info":
-                chosen_agent = "ecommerce-info"
-                answer = await self._run_ecommerce_info(session_id, user_text)
-            else:
-                # Fallback logic (preserved)
-                chosen_agent = "ecommerce-info"
-                routing_info["note"] = "fallback_default_info"
-                answer = await self._run_ecommerce_info(session_id, user_text)
-            
-            routing_info["routed_to"] = chosen_agent
-            routing_info["confidence"] = 0.9 if intent != "Unknown" else 0.5
-            
-            # Update memory (preserved logic)
-            from agent.memory import RollingMemory
-            memory = RollingMemory(window_size=ACPConfig.MEMORY_WINDOW)
-            memory.append(session_id, "user", user_text)
-            memory.append(session_id, "assistant", answer)
-            
-            # Create ACP-compliant response with enhanced metadata
-            from acp_sdk import Message, MessagePart
-            import json
-            
-            output_messages = [
-                Message(
-                    role=f"agent/{chosen_agent}",
-                    parts=[
-                        MessagePart(
-                            content_type="text/plain",
-                            content=answer,
-                            metadata={
-                                "intent": intent,
-                                "agent": chosen_agent,
-                                "confidence": routing_info["confidence"],
-                                "processing_time": self._calculate_processing_time(run.created_at)
-                            }
-                        )
-                    ]
-                ),
-                Message(
-                    role=f"agent/{chosen_agent}",
-                    parts=[
-                        MessagePart(
-                            name="routing_metadata",
-                            content_type="application/json",
-                            content=json.dumps(routing_info)
-                        )
-                    ]
-                )
-            ]
-            
-            # Update run with results
-            run.status = run.status.COMPLETED
-            run.output = output_messages
-            run.finished_at = self._now_iso()
-            
-            # Cache the run
-            self._run_cache[run.run_id] = run
-            
-            return run
-            
-        except Exception as e:
-            # Comprehensive error handling
-            run.status = run.status.FAILED
-            run.error = {
-                "code": "AGENT_EXECUTION_ERROR",
-                "message": str(e),
-                "details": {
-                    "agent": "ecommerce-router",
-                    "session_id": getattr(run, 'session_id', None),
-                    "timestamp": self._now_iso(),
-                    "retry_attempts": getattr(run, 'retry_attempts', 0)
-                }
-            }
-            run.finished_at = self._now_iso()
-            
-            # Cache failed run for debugging
-            self._run_cache[run.run_id] = run
-            
-            return run
     
-    def _extract_user_input(self, run):
-        """Extract user input from ACP run with validation"""
-        print(f"DEBUG: Run object: {run}")
-        print(f"DEBUG: Run attributes: {dir(run)}")
-        
-        if not hasattr(run, 'input') or not run.input:
-            print("DEBUG: No input attribute or empty input")
-            return ""
-        
-        print(f"DEBUG: Input: {run.input}")
-        first_message = run.input[0]
-        print(f"DEBUG: First message: {first_message}")
-        print(f"DEBUG: First message attributes: {dir(first_message)}")
-        
-        if not hasattr(first_message, 'parts') or not first_message.parts:
-            print("DEBUG: No parts attribute or empty parts")
-            return ""
-        
-        print(f"DEBUG: Parts: {first_message.parts}")
-        content = first_message.parts[0].content or ""
-        print(f"DEBUG: Extracted content: '{content}'")
-        return content
-    
-    async def _run_ecommerce_info(self, user_id: str, text: str) -> str:
+    def get_memory(self, session_id: str) -> List:
         """
-        Preserved RAG logic for e-commerce info queries
-        Enhanced with async support and optimal error handling
+        Get conversation history for a session
+        
+        Args:
+            session_id: Session identifier
+            
+        Returns:
+            List of conversation turns
         """
-        try:
-            from agent.memory import RollingMemory
-            memory = RollingMemory(window_size=ACPConfig.MEMORY_WINDOW)
-            mem = memory.get(user_id)
-            retriever = VectorRetriever()
-            results = retriever.retrieve(text, k=self.agent_config["default_top_k"])
-            good = [r for r in results if (1.0 - r["score"]) >= self.agent_config["default_relevance"] or r["score"] >= self.agent_config["default_relevance"]]
-            rag_context = [r["text"] for r in (good or results)]
-            
-            if not rag_context:
-                return "I couldn't find relevant documents for that query. Please try rephrasing your question or ask about a different topic."
-            
-            return build_answer(text, mem, rag_context, sql_rows=None)
-            
-        except Exception as e:
-            return f"I encountered an error while searching for information: {str(e)}. Please try again."
+        if self.magentic_agent:
+            return self.magentic_agent.get_memory(session_id)
+        return []
     
-    async def _run_ecommerce_data(self, user_id: str, text: str) -> str:
+    def clear_memory(self, session_id: str):
         """
-        Preserved SQL logic for e-commerce data queries
-        Enhanced with async support and optimal error handling
+        Clear conversation history for a session
+        
+        Args:
+            session_id: Session identifier
         """
-        try:
-            from agent.memory import RollingMemory
-            memory = RollingMemory(window_size=ACPConfig.MEMORY_WINDOW)
-            mem = memory.get(user_id)
-            sql_tool = SQLTool()
-            out = sql_tool.run(text)
-            sql_rows = out.get("rows", [])
-            rag_context = None
-            
-            if not sql_rows:
-                # Fallback to RAG if no SQL results
-                retriever = VectorRetriever()
-                results = retriever.retrieve(text, k=self.agent_config["default_top_k"])
-                good = [r for r in results if (1.0 - r["score"]) >= self.agent_config["default_relevance"] or r["score"] >= self.agent_config["default_relevance"]]
-                rag_context = [r["text"] for r in (good or results)]
-            
-            if not (sql_rows or rag_context):
-                return "No relevant data found in the database or knowledge base. Please check your query or try a different approach."
-            
-            return build_answer(text, mem, rag_context, sql_rows)
-            
-        except Exception as e:
-            return f"I encountered an error while querying the database: {str(e)}. Please try rephrasing your question."
+        if self.magentic_agent:
+            self.magentic_agent.clear_memory(session_id)
     
-    def _calculate_processing_time(self, created_at: str) -> float:
-        """Calculate processing time in seconds"""
-        try:
-            created_time = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
-            current_time = datetime.utcnow()
-            return (current_time - created_time).total_seconds()
-        except:
-            return 0.0
+    async def close(self):
+        """Close the agent and clean up resources"""
+        if self.magentic_agent:
+            await self.magentic_agent.close()
     
-    def _now_iso(self) -> str:
+    def _now_iso(self):
         """Get current timestamp in ISO format"""
-        return datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+        return datetime.utcnow().isoformat() + "Z"
     
-    def get_run(self, run_id: str):
-        """Get cached run by ID"""
-        return self._run_cache.get(run_id)
-    
-    def get_all_runs(self):
-        """Get all cached runs"""
-        return self._run_cache.copy()
+    def get_capabilities(self):
+        """
+        Get agent capabilities (for ACP)
+        
+        Returns:
+            Dictionary of agent capabilities
+        """
+        return {
+            "name": self.name,
+            "description": self.description,
+            "version": "2.0.0",
+            "orchestrator": "Microsoft Magentic-One",
+            "features": [
+                "Automatic query routing",
+                "Multi-agent orchestration",
+                "RAG (Retrieval Augmented Generation)",
+                "SQL database queries",
+                "Conversation memory",
+                "Streaming responses"
+            ],
+            "agents": [
+                {
+                    "name": "EcommerceInfoAgent",
+                    "description": "Handles e-commerce trends, strategies, and best practices using document retrieval"
+                },
+                {
+                    "name": "EcommerceDataAgent",
+                    "description": "Handles sales data, product performance, and database queries"
+                }
+            ]
+        }
+
+
+# For backward compatibility
+_agent_instance = None
+
+def get_agent_instance():
+    """Get or create the singleton agent instance"""
+    global _agent_instance
+    if _agent_instance is None:
+        _agent_instance = EcommerceAgent()
+    return _agent_instance
