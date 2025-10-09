@@ -15,154 +15,95 @@ from openai import AsyncOpenAI
 from tools.vector_pinecone import VectorRetriever
 from tools.sql_postgres import SQLTool
 
-
-# ============================================================================
-# SQL TEMPLATES FOR INSTANT RESPONSES
-# ============================================================================
-
-SQL_TEMPLATES = {
-    'top_products': """
-SELECT product_description, SUM(sales_revenue) as total_revenue
-FROM products
-GROUP BY product_description
-ORDER BY total_revenue DESC
-LIMIT {limit};
-""",
-    
-    'total_revenue': """
-SELECT SUM(sales_revenue) as total_revenue
-FROM products;
-""",
-    
-    'product_count': """
-SELECT COUNT(DISTINCT product_description) as product_count
-FROM products;
-""",
-    
-    'average_quantity': """
-SELECT AVG(quantity) as avg_quantity
-FROM products;
-""",
-    
-    'revenue_by_region': """
-SELECT region, SUM(sales_revenue) as total_revenue
-FROM products
-GROUP BY region
-ORDER BY total_revenue DESC;
-""",
-    
-    'products_by_category': """
-SELECT product_category, COUNT(*) as product_count
-FROM products
-GROUP BY product_category
-ORDER BY product_count DESC;
-""",
-}
-
-
-def match_sql_template(query: str) -> Optional[tuple[str, Dict[str, Any]]]:
-    """Match query to SQL template for instant execution"""
-    query_lower = query.lower()
-    
-    # Top products
-    if any(word in query_lower for word in ['top', 'best', 'highest']) and \
-       any(word in query_lower for word in ['product', 'item', 'selling']):
-        # Extract limit if specified
-        limit = 5
-        if '10' in query:
-            limit = 10
-        elif '3' in query:
-            limit = 3
-        return SQL_TEMPLATES['top_products'], {'limit': limit}
-    
-    # Total revenue
-    if any(word in query_lower for word in ['total', 'overall']) and \
-       any(word in query_lower for word in ['revenue', 'sales', 'income']):
-        return SQL_TEMPLATES['total_revenue'], {}
-    
-    # Product count
-    if any(word in query_lower for word in ['how many', 'count', 'number']) and \
-       'product' in query_lower:
-        return SQL_TEMPLATES['product_count'], {}
-    
-    # Average quantity
-    if 'average' in query_lower and 'quantity' in query_lower:
-        return SQL_TEMPLATES['average_quantity'], {}
-    
-    # Revenue by region
-    if 'region' in query_lower and any(word in query_lower for word in ['revenue', 'sales']):
-        return SQL_TEMPLATES['revenue_by_region'], {}
-    
-    # Products by category
-    if 'category' in query_lower or 'categories' in query_lower:
-        return SQL_TEMPLATES['products_by_category'], {}
-    
-    return None
-
-
-# ============================================================================
-# SMART PRE-ROUTER - FASTER THAN BEFORE
-# ============================================================================
-
 class UltraFastRouter:
-    """Lightning-fast query routing with template matching"""
+    """Smart router for query classification"""
     
-    # SQL indicators
+    # SQL indicators - Product-specific queries (database data)
     SQL_KEYWORDS = [
-        'recommend', 'best', 'highest', 'lowest', 'total', 'average', 'count',
-        'how many', 'number of', 'sum', 'revenue', 'sales', 'quantity',
-        'product name', 'region', 'category', 'price', 'order'
+        # Product-related
+        'product', 'products', 'item', 'items', 'sku',
+        # Price/Cost-related
+        'price', 'cost', 'expensive', 'cheap', 'affordable',
+        # Recommendations/Suggestions
+        'recommend', 'recommendation', 'suggest', 'suggestion',
+        # Superlatives (best, top, highest, etc.)
+        'best', 'top', 'highest', 'lowest', 'most', 'least',
+        # Aggregations
+        'total', 'sum', 'average', 'count', 'how many', 'number of',
+        # Sales/Revenue data
+        'sales', 'revenue', 'sold', 'selling', 'profit',
+        # Quantities
+        'quantity', 'stock', 'inventory', 'available',
+        # Categories/Regions
+        'region', 'category', 'categories',
+        # Orders
+        'order', 'orders', 'purchase', 'buy', 'bought'
     ]
     
-    # RAG indicators
+    # RAG indicators - General e-commerce knowledge (documents/reports)
     RAG_KEYWORDS = [
-        'trend', 'strategy', 'practice', 'guide', 'how to', 'what is',
-        'explain', 'advice', 'recommendation', 'insight', 'report',
-        'e-commerce', 'ecommerce', 'cross-border', 'market', 'customer'
+        # Trends & Insights
+        'trend', 'trends', 'trending', 'pattern', 'patterns',
+        # Strategy & Practices
+        'strategy', 'strategies', 'practice', 'practices', 'best practice',
+        # Guides & How-to
+        'guide', 'how to', 'how do', 'how can', 'tutorial',
+        # Explanations
+        'what is', 'what are', 'explain', 'definition', 'meaning',
+        # Advice & Recommendations (general, not product-specific)
+        'advice', 'tip', 'tips', 'insight', 'insights',
+        # Reports & Research
+        'report', 'research', 'study', 'analysis', 'statistics',
+        # E-commerce concepts
+        'e-commerce', 'ecommerce', 'cross-border', 'market', 'marketplace',
+        # Customer behavior (general)
+        'customer behavior', 'consumer', 'shopping behavior',
+        # Business concepts
+        'growth', 'optimization', 'conversion', 'retention'
     ]
     
-    # Complex query indicators
+    # Complex query indicators - Needs orchestrator
     COMPLEX_KEYWORDS = [
         'both', 'and also', 'as well as', 'compare', 'versus', 'vs',
-        'difference between', 'along with', 'combined with', 'together'
+        'difference between', 'along with', 'combined with', 'together',
+        'correlation', 'relationship between'
     ]
     
     @classmethod
-    def route(cls, query: str) -> tuple[str, Optional[tuple]]:
+    def route(cls, query: str) -> str:
         """
-        Route query with template matching
-        Returns: (route_type, template_info)
+        Route query based on keywords
+        
+        Priority:
+        1. Complex queries → orchestrator
+        2. Product/Price/Sales queries → sql
+        3. General e-commerce knowledge → rag
+        
+        Returns: route_type ('sql', 'rag', or 'orchestrator')
         """
         query_lower = query.lower()
         
         # First: Check if it's a complex query (needs orchestrator)
         if any(keyword in query_lower for keyword in cls.COMPLEX_KEYWORDS):
-            return 'orchestrator', None
+            return 'orchestrator'
         
-        # Second: Check for SQL template match (FASTEST!)
-        template_match = match_sql_template(query)
-        if template_match:
-            return 'sql_template', template_match
-        
-        # Third: Check for SQL query (needs LLM to generate SQL)
+        # Second: Check for SQL query (product-specific)
         sql_score = sum(1 for keyword in cls.SQL_KEYWORDS if keyword in query_lower)
         
-        # Fourth: Check for RAG query
+        # Third: Check for RAG query (general knowledge)
         rag_score = sum(1 for keyword in cls.RAG_KEYWORDS if keyword in query_lower)
         
-        # Decide based on scores
-        if sql_score > rag_score:
-            return 'sql', None
+        # Decide based on scores with SQL priority for product queries
+        if sql_score > 0:
+            # If any SQL keywords found, route to SQL
+            return 'sql'
         elif rag_score > 0:
-            return 'rag', None
+            # If RAG keywords found and no SQL keywords, route to RAG
+            return 'rag'
         else:
-            # Default to RAG for general questions
-            return 'rag', None
+            # Default to SQL for unknown queries (likely product-related)
+            return 'rag'
 
-
-# ============================================================================
-# ENHANCED QUERY CACHE
-# ============================================================================
 
 class SmartCache:
     """Enhanced caching with statistics"""
@@ -220,13 +161,8 @@ class SmartCache:
             'hit_rate': f"{hit_rate:.1f}%"
         }
 
-
-# ============================================================================
-#  MAGENTIC-ONE AGENT
-# ============================================================================
-
 class MagenticAgent:
-    """Ultra-optimized Magentic-One implementation"""
+    """Magentic-One implementation"""
     
     def __init__(self, api_key: str, enable_cache: bool = True, max_turns: int = 2):
         self.api_key = api_key
@@ -254,9 +190,9 @@ class MagenticAgent:
         # Lazy initialization for Magentic-One team
         self._team = None
         
-        print("✅ Ultra-Fast Magentic Agent initialized")
-        print(f"   - Cache: {'Enabled' if enable_cache else 'Disabled'}")
-        print(f"   - Max turns: {max_turns}")
+        print("✅ Magentic Agent initialized")
+        print(f"  - Cache: {'Enabled' if enable_cache else 'Disabled'}")
+        print(f"  - Max turns: {max_turns}")
     
     def _init_team(self):
         """Lazy initialization of Magentic-One team"""
@@ -292,7 +228,7 @@ class MagenticAgent:
             name="SQL_Agent",
             model_client=self.llm_client,
             tools=[sql_query],
-            description="Executes SQL queries on sales database"
+            description="Executes SQL queries on database"
         )
         
         # Create Magentic-One team
@@ -302,32 +238,6 @@ class MagenticAgent:
             max_turns=self.max_turns,
             termination_condition=TextMentionTermination("TERMINATE")
         )
-    
-    async def _execute_sql_template(self, template: str, params: Dict[str, Any]) -> str:
-        """Execute SQL template instantly"""
-        try:
-            # Format template with parameters
-            sql_query = template.format(**params) if params else template
-            
-            # Execute query directly against database
-            with self.sql_tool.engine.connect() as conn:
-                from sqlalchemy import text
-                result = conn.execute(text(sql_query))
-                rows = [dict(r._mapping) for r in result]
-            
-            # Format response
-            if rows:
-                # Format results nicely
-                response = "Based on the sales data:\n"
-                for row in rows:
-                    response += "\n" + ", ".join([f"{k}: {v}" for k, v in row.items()])
-                return response
-            else:
-                return "No data found for this query."
-                
-        except Exception as e:
-            print(f"❌ SQL template execution error: {e}")
-            return "I encountered an error accessing the database."
     
     async def _execute_sql(self, query: str) -> str:
         """Execute SQL query (needs LLM to generate SQL)"""
@@ -433,21 +343,18 @@ Provide a clear, concise answer."""
                 }
         
         # Route query
-        route_type, template_info = UltraFastRouter.route(user_query)
+        route_type = UltraFastRouter.route(user_query)
         
         print(f"🎯 Route: {route_type}")
         
         # Execute based on route
-        if route_type == 'sql_template':
-            template, params = template_info
-            response = await self._execute_sql_template(template, params)
-        elif route_type == 'sql':
+        if route_type == 'sql':
             response = await self._execute_sql(user_query)
         elif route_type == 'rag':
             response = await self._execute_rag(user_query)
         else:  # orchestrator
             response = await self._execute_orchestrator(user_query)
-        
+        # response = await self._execute_orchestrator(user_query)
         # Cache response
         if self.enable_cache:
             self.cache.set(user_query, response)

@@ -50,7 +50,7 @@ async def create_run(request: RunCreateRequest, background_tasks: BackgroundTask
         # Generate session ID
         session_id = request.session_id or str(uuid.uuid4())
         
-        result = await ecommerce_agent.execute_direct(request, session_id)
+        result = await ecommerce_agent.execute_agent(request, session_id)
         return result
         
     except HTTPException:

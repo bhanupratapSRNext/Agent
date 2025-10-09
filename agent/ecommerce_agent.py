@@ -42,7 +42,7 @@ class EcommerceAgent:
                 enable_cache=True  # Enable caching
             )
     
-    async def execute_direct(self, request, session_id):
+    async def execute_agent(self, request, session_id):
         """
         Execute the agent directly with request data using Magentic-One
         
@@ -137,58 +137,58 @@ class EcommerceAgent:
                 "finished_at": self._now_iso()
             }
     
-    async def execute(self, request):
-        """
-        Legacy execute method for backward compatibility
+    # async def execute(self, request):
+    #     """
+    #     Legacy execute method for backward compatibility
         
-        Args:
-            request: The request object
+    #     Args:
+    #         request: The request object
             
-        Returns:
-            Response dictionary
-        """
-        # Generate session ID if not provided
-        session_id = getattr(request, 'session_id', None) or str(uuid.uuid4())
-        return await self.execute_direct(request, session_id)
+    #     Returns:
+    #         Response dictionary
+    #     """
+    #     # Generate session ID if not provided
+    #     session_id = getattr(request, 'session_id', None) or str(uuid.uuid4())
+    #     return await self.execute_agent(request, session_id)
     
-    async def execute_streaming(self, request, session_id):
-        """
-        Execute with streaming response (async generator)
+    # async def execute_streaming(self, request, session_id):
+    #     """
+    #     Execute with streaming response (async generator)
         
-        Args:
-            request: The request object
-            session_id: Session identifier
+    #     Args:
+    #         request: The request object
+    #         session_id: Session identifier
             
-        Yields:
-            Response chunks as they become available
-        """
-        try:
-            # Ensure agent is initialized
-            await self._ensure_agent_initialized()
+    #     Yields:
+    #         Response chunks as they become available
+    #     """
+    #     try:
+    #         # Ensure agent is initialized
+    #         await self._ensure_agent_initialized()
             
-            # Extract user input
-            user_text = request.input[0].parts[0].content if request.input and request.input[0].parts else ""
+    #         # Extract user input
+    #         user_text = request.input[0].parts[0].content if request.input and request.input[0].parts else ""
             
-            if not user_text.strip():
-                raise ValueError("Empty user input provided")
+    #         if not user_text.strip():
+    #             raise ValueError("Empty user input provided")
             
-            print(f"[EcommerceAgent] Processing query (streaming): '{user_text}'")
+    #         print(f"[EcommerceAgent] Processing query (streaming): '{user_text}'")
             
-            # Use Magentic-One streaming
-            async for chunk in self.magentic_agent.execute_streaming(session_id, user_text):
-                yield {
-                    "chunk": chunk,
-                    "session_id": session_id,
-                    "timestamp": self._now_iso()
-                }
+    #         # Use Magentic-One streaming
+    #         async for chunk in self.magentic_agent.execute_streaming(session_id, user_text):
+    #             yield {
+    #                 "chunk": chunk,
+    #                 "session_id": session_id,
+    #                 "timestamp": self._now_iso()
+    #             }
                 
-        except Exception as e:
-            yield {
-                "chunk": f"Error: {str(e)}",
-                "session_id": session_id,
-                "error": str(e),
-                "timestamp": self._now_iso()
-            }
+    #     except Exception as e:
+    #         yield {
+    #             "chunk": f"Error: {str(e)}",
+    #             "session_id": session_id,
+    #             "error": str(e),
+    #             "timestamp": self._now_iso()
+    #         }
     
     def get_memory(self, session_id: str) -> List:
         """
