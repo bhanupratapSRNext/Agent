@@ -10,15 +10,26 @@ def list_agents():
     """List all registered agents with full metadata"""
     agents = [
         AgentManifest(
-            name="ecommerce-router",
-            description="Intelligent e-commerce agent that routes queries to RAG or SQL handlers",
+            name="ecommerce-magentic-one",
+            description="Intelligent e-commerce agent powered by Microsoft's Magentic-One multi-agent orchestrator",
             input_content_types=["text/plain", "application/json"],
             output_content_types=["text/plain", "application/json"],
             metadata={
-                "capabilities": ["intent_classification", "rag_retrieval", "sql_querying", "response_composition"],
+                "capabilities": [
+                    "automatic_query_routing", 
+                    "multi_agent_orchestration",
+                    "rag_retrieval", 
+                    "sql_querying", 
+                    "response_composition"
+                ],
+                "orchestrator": "Microsoft Magentic-One",
                 "natural_languages": ["en"],
                 "max_context_length": ACPConfig.AGENT_MAX_CONTEXT_LENGTH,
-                "supports_streaming": True
+                "supports_streaming": True,
+                "agents": [
+                    {"name": "EcommerceInfoAgent", "role": "RAG and document retrieval"},
+                    {"name": "EcommerceDataAgent", "role": "SQL database queries"}
+                ]
             }
         )
     ]
@@ -36,17 +47,28 @@ def list_agents():
 @router.get("/{agent_name}")
 def get_agent(agent_name: str):
     """Get specific agent information"""
-    if agent_name == "ecommerce-router" or agent_name == "router":
+    if agent_name == "ecommerce-magentic-one" or agent_name == "ecommerce-router" or agent_name == "router":
         return AgentManifest(
-            name="ecommerce-router",
-            description="Intelligent e-commerce agent that routes queries to RAG or SQL handlers",
+            name="ecommerce-magentic-one",
+            description="Intelligent e-commerce agent powered by Microsoft's Magentic-One multi-agent orchestrator",
             input_content_types=["text/plain", "application/json"],
             output_content_types=["text/plain", "application/json"],
             metadata={
-                "capabilities": ["intent_classification", "rag_retrieval", "sql_querying", "response_composition"],
+                "capabilities": [
+                    "automatic_query_routing", 
+                    "multi_agent_orchestration",
+                    "rag_retrieval", 
+                    "sql_querying", 
+                    "response_composition"
+                ],
+                "orchestrator": "Microsoft Magentic-One",
                 "natural_languages": ["en"],
                 "max_context_length": ACPConfig.AGENT_MAX_CONTEXT_LENGTH,
-                "supports_streaming": True
+                "supports_streaming": True,
+                "agents": [
+                    {"name": "EcommerceInfoAgent", "role": "RAG and document retrieval"},
+                    {"name": "EcommerceDataAgent", "role": "SQL database queries"}
+                ]
             }
         ).model_dump()
     else:

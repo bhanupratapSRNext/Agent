@@ -25,3 +25,4 @@ tiktoken
 
 google-generativeai
 acp-sdk-python
+magentic>=0.12.3
