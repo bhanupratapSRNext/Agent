@@ -26,9 +26,13 @@ class EcommerceAgent:
         
         # Get API key from environment
         import os
-        self.api_key = os.getenv("OPENAI_API_KEY")
+        # Try OpenRouter first, fallback to OpenAI
+        self.api_key = os.getenv("OPEN_ROUTER_KEY")
         if not self.api_key:
-            raise ValueError("OPENAI_API_KEY environment variable is required")
+            raise ValueError("OPEN_ROUTER_KEY environment variable is required")
+
+        # Get model from environment or use default
+        self.model = os.getenv("OPENROUTER_MODEL")
         
         # Initialize the Magentic-One agent system
         self.magentic_agent = None  # Will be initialized async
@@ -38,6 +42,7 @@ class EcommerceAgent:
         if self.magentic_agent is None:
             self.magentic_agent = MagenticAgent(
                 api_key=self.api_key,
+                model=self.model,
                 max_turns=2,  # Reduced for faster responses
                 enable_cache=True  # Enable caching
             )
