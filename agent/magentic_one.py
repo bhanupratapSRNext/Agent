@@ -1,5 +1,6 @@
 import hashlib
 import time
+import os
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta
 
@@ -69,24 +70,42 @@ class UltraFastRouter:
         'correlation', 'relationship between'
     ]
     
+    # Small talk indicators - Fast response path
+    SMALLTALK_KEYWORDS = [
+        'hello', 'hi', 'hey', 'greetings', 'good morning', 'good afternoon',
+        'good evening', 'how are you', "how's it going", "what's up",
+        'thanks', 'thank you', 'bye', 'goodbye', 'see you',
+        'who are you', 'what are you', 'what can you do', 'help me',
+        'nice to meet you', 'pleased to meet you', 'howdy', 'hiya'
+    ]
+    
     @classmethod
     def route(cls, query: str) -> str:
         """
         Route query based on keywords
         
         Priority:
-        1. Complex queries → orchestrator
-        2. Product/Price/Sales queries → sql
-        3. General e-commerce knowledge → rag
+        1. Small talk → smalltalk (fast path)
+        2. Complex queries → orchestrator
+        3. Product/Price/Sales queries → sql
+        4. General e-commerce knowledge → rag
         
-        Returns: route_type ('sql', 'rag', or 'orchestrator')
+        Returns: route_type ('smalltalk', 'sql', 'rag', or 'orchestrator')
         """
         query_lower = query.lower()
+        
+        # 1. Check for small talk FIRST (highest priority for performance)
+        if any(keyword in query_lower for keyword in cls.SMALLTALK_KEYWORDS):
+            return 'smalltalk'
+        
+        # 2. Check for complex queries
+        if any(keyword in query_lower for keyword in cls.COMPLEX_KEYWORDS):
+            return 'orchestrator'
          
-        # Check for SQL query (product-specific)
+        # 3. Check for SQL query (product-specific)
         sql_score = sum(1 for keyword in cls.SQL_KEYWORDS if keyword in query_lower)
         
-        # Check for RAG query (general knowledge)
+        # 4. Check for RAG query (general knowledge)
         rag_score = sum(1 for keyword in cls.RAG_KEYWORDS if keyword in query_lower)
         
         # Decide based on scores with SQL priority for product queries
@@ -164,6 +183,7 @@ class MagenticAgent:
         self.enable_cache = enable_cache
         self.max_turns = max_turns
         self.model = model
+        self.base_url = os.getenv("BASE_URL")
         
         # Initialize cache
         self.cache = SmartCache() if enable_cache else None
@@ -176,7 +196,7 @@ class MagenticAgent:
         # For direct simple calls (RAG, SQL) - Using OpenRouter
         self.openai_client = AsyncOpenAI(
             api_key=api_key,
-            base_url="https://openrouter.ai/api/v1"
+            base_url=self.base_url
         )
         
         # For Magentic-One orchestrator - Using OpenRouter
@@ -194,7 +214,7 @@ class MagenticAgent:
         self.llm_client = OpenAIChatCompletionClient(
             model=model,
             api_key=api_key,
-            base_url="https://openrouter.ai/api/v1",
+            base_url=self.base_url,
             model_info=model_info
         )
         
@@ -252,6 +272,40 @@ class MagenticAgent:
             termination_condition=TextMentionTermination("TERMINATE")
         )
     
+    async def _execute_smalltalk(self, query: str) -> str:
+        """Execute small talk - direct, fast response without tools"""
+        try:
+            system_msg = """You are a friendly e-commerce assistant.
+
+Respond naturally to greetings and casual conversation.
+Keep responses brief (1-2 sentences maximum).
+Be warm but professional.
+
+If asked what you can do, mention:
+- Answer questions about e-commerce trends and strategies
+- Analyze sales data and product performance
+- Provide insights from e-commerce reports
+- Help with data-driven recommendations
+
+Do not cite sources or mention technical details. Just be conversational."""
+            
+            # Direct LLM call - no tools, no context retrieval, no orchestration
+            response = await self.openai_client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system_msg},
+                    {"role": "user", "content": query}
+                ],
+                max_tokens=100,  # Keep it short for greetings
+                temperature=0.7  # More natural for conversation
+            )
+            return response.choices[0].message.content.strip()
+            
+        except Exception as e:
+            print(f"❌ Small talk error: {e}")
+            # Friendly fallback
+            return "Hello! I'm here to help you with e-commerce insights and data analysis. What can I help you with today?"
+    
     async def _execute_sql(self, query: str) -> str:
         """Execute SQL query (needs LLM to generate SQL)"""
         try:
@@ -265,10 +319,7 @@ class MagenticAgent:
             
             # Format response
             if rows:
-                response = "Based on the sales data:\n"
-                for row in rows:
-                    response += "\n" + ", ".join([f"{k}: {v}" for k, v in row.items()])
-                return response
+                return rows
             else:
                 note = result_dict.get("note", "")
                 if note:
@@ -370,13 +421,15 @@ class MagenticAgent:
         print(f"🎯 Route: {route_type}")
         
         # Execute based on route
-        if route_type == 'sql':
+        if route_type == 'smalltalk':
+            response = await self._execute_smalltalk(user_query)
+        elif route_type == 'sql':
             response = await self._execute_sql(user_query)
         elif route_type == 'rag':
             response = await self._execute_rag(user_query)
         else:  # orchestrator
             response = await self._execute_orchestrator(user_query)
-        # response = await self._execute_orchestrator(user_query)
+        
         # Cache response
         if self.enable_cache:
             self.cache.set(user_query, response)

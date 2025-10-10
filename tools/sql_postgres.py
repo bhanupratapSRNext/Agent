@@ -25,7 +25,8 @@ class SQLTool:
             raise RuntimeError("Missing OPEN_ROUTER_KEY environment variable")
 
         # Get model from environment or use default
-        llm_model = os.getenv("OPENROUTER_MODEL", "openai/gpt-4o-mini")
+        llm_model = os.getenv("OPENROUTER_MODEL")
+        base_url = os.getenv("BASE_URL")
         
         self.engine = create_engine(_pg_uri(), pool_pre_ping=True)
         self.db = SQLDatabase.from_uri(_pg_uri())
@@ -36,7 +37,7 @@ class SQLTool:
                 api_key=api_key,
                 model=llm_model,
                 temperature=0,
-                base_url="https://openrouter.ai/api/v1",
+                base_url=base_url,
                 model_kwargs={
                     "response_format": {"type": "text"}
                 }
