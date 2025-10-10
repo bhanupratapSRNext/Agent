@@ -8,10 +8,10 @@ class ACPConfig:
     """ACP SDK Configuration class"""
     
     # Server Configuration
-    SERVER_ID = os.getenv("ACP_SERVER_ID", "ecommerce-agent-service")
-    SERVER_NAME = os.getenv("ACP_SERVER_NAME", "E-commerce Agent Service")
-    SERVER_VERSION = os.getenv("ACP_SERVER_VERSION", "2.0.0")
-    SERVER_PORT = int(os.getenv("SERVER_PORT", "8080"))
+    SERVER_ID = os.getenv("ACP_SERVER_ID")
+    SERVER_NAME = os.getenv("ACP_SERVER_NAME")
+    SERVER_VERSION = os.getenv("ACP_SERVER_VERSION")
+    SERVER_PORT = int(os.getenv("SERVER_PORT"))
     UVICORN_RELOAD = os.getenv("UVICORN_RELOAD", "True").lower() == "true"
     UVICORN_LOG_LEVEL = os.getenv("UVICORN_LOG_LEVEL", "info")
     
@@ -25,7 +25,7 @@ class ACPConfig:
     RATE_LIMIT_BURST_SIZE = int(os.getenv("ACP_RATE_LIMIT_BURST", "20"))
     
     # Authentication Configuration
-    AUTH_JWT_SECRET = os.getenv("ACP_JWT_SECRET", "your-secret-key")
+    AUTH_JWT_SECRET = os.getenv("ACP_JWT_SECRET")
     AUTH_JWT_ALGORITHM = os.getenv("ACP_JWT_ALGORITHM", "HS256")
     AUTH_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACP_TOKEN_EXPIRE", "60"))
     

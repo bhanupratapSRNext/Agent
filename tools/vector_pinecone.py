@@ -11,14 +11,14 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 
 class VectorRetriever:
     def __init__(self):
-        openai_key = os.getenv("OPENAI_API_KEY")
+        api_key = os.getenv("OPEN_ROUTER_KEY")
         embed_model = os.getenv("EMBED_MODEL")
         pinecone_key = os.getenv("PINECONE_API_KEY")
         index_name = os.getenv("PINECONE_INDEX_NAME")
         namespace = os.getenv("PINECONE_NAMESPACE", "default")
 
-        if not (openai_key and pinecone_key and index_name):
-            raise RuntimeError("Missing OPENAI_API_KEY or PINECONE_* env vars")
+        if not (api_key and pinecone_key and index_name):
+            raise RuntimeError("Missing OPEN_ROUTER_KEY or PINECONE_* env vars")
 
         self.pc = Pinecone(api_key=pinecone_key)
         # self.embeddings = OpenAIEmbeddings(api_key=openai_key, model=embed_model)

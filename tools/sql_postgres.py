@@ -19,14 +19,31 @@ def _pg_uri() -> str:
 
 class SQLTool:
     def __init__(self):
-        openai_key = os.getenv("OPENAI_API_KEY")
-        llm_model = os.getenv("OPENAI_MODEL")
-        if not openai_key:
-            raise RuntimeError("Missing OPENAI_API_KEY")
+        # Try OpenRouter first, fallback to OpenAI
+        api_key = os.getenv("OPEN_ROUTER_KEY")
+        if not api_key:
+            raise RuntimeError("Missing OPEN_ROUTER_KEY environment variable")
 
+        # Get model from environment or use default
+        llm_model = os.getenv("OPENROUTER_MODEL", "openai/gpt-4o-mini")
+        
         self.engine = create_engine(_pg_uri(), pool_pre_ping=True)
         self.db = SQLDatabase.from_uri(_pg_uri())
-        self.llm = ChatOpenAI(api_key=openai_key, model=llm_model, temperature=0)
+        
+        # Use OpenRouter if OPEN_ROUTER_KEY is set
+        if os.getenv("OPEN_ROUTER_KEY"):
+            self.llm = ChatOpenAI(
+                api_key=api_key,
+                model=llm_model,
+                temperature=0,
+                base_url="https://openrouter.ai/api/v1",
+                model_kwargs={
+                    "response_format": {"type": "text"}
+                }
+            )
+        else:
+            # Fallback to direct OpenAI
+            self.llm = ChatOpenAI(api_key=api_key, model=llm_model, temperature=0)
 
         allowlist = os.getenv("SQL_ALLOWED_TABLES", "")
         self.allowed_tables = [t.strip().lower() for t in allowlist.split(",") if t.strip()]
@@ -34,6 +51,18 @@ class SQLTool:
     def run(self, question: str) -> Dict[str, Any]:
         chain = create_sql_query_chain(self.llm, self.db)
         sql = chain.invoke({"question": question}).strip()
+        
+        # Simple cleanup for OpenRouter responses
+        # Remove common prefixes and markdown code blocks
+        if sql.startswith("SQLQuery:") or sql.startswith("SQL Query:"):
+            sql = sql.split(":", 1)[1].strip()
+        
+        # Remove markdown code blocks
+        sql = sql.replace("```sql", "").replace("```", "").strip()
+        
+        # If multi-line, join lines
+        if "\n" in sql:
+            sql = " ".join(line.strip() for line in sql.split("\n") if line.strip())
 
         if self.allowed_tables:
             lowered = sql.lower()

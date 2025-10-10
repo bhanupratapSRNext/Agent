@@ -159,10 +159,11 @@ class SmartCache:
 class MagenticAgent:
     """Magentic-One implementation"""
     
-    def __init__(self, api_key: str, enable_cache: bool = True, max_turns: int = 2):
+    def __init__(self, api_key: str, enable_cache: bool = True, max_turns: int = 2, model: str = "openai/gpt-4o-mini"):
         self.api_key = api_key
         self.enable_cache = enable_cache
         self.max_turns = max_turns
+        self.model = model
         
         # Initialize cache
         self.cache = SmartCache() if enable_cache else None
@@ -172,20 +173,37 @@ class MagenticAgent:
         self.sql_tool = SQLTool()
         
         # Initialize LLM clients
-        # For direct simple calls (RAG, SQL)
-        self.openai_client = AsyncOpenAI(api_key=api_key)
-        self.model = "gpt-4o-mini"
+        # For direct simple calls (RAG, SQL) - Using OpenRouter
+        self.openai_client = AsyncOpenAI(
+            api_key=api_key,
+            base_url="https://openrouter.ai/api/v1"
+        )
         
-        # For Magentic-One orchestrator
+        # For Magentic-One orchestrator - Using OpenRouter
+        # Extract base model name for model_info (remove provider prefix)
+        base_model = model.split('/')[-1] if '/' in model else model
+        
+        from autogen_core.models import ModelInfo
+        model_info = ModelInfo(
+            vision=False,
+            function_calling=True,
+            json_output=True,
+            family=base_model
+        )
+        
         self.llm_client = OpenAIChatCompletionClient(
-            model="gpt-4o-mini",
-            api_key=api_key
+            model=model,
+            api_key=api_key,
+            base_url="https://openrouter.ai/api/v1",
+            model_info=model_info
         )
         
         # Lazy initialization for Magentic-One team
         self._team = None
         
         print("✅ Magentic Agent initialized")
+        print(f"  - Model: {model}")
+        print(f"  - Provider: OpenRouter")
         print(f"  - Cache: {'Enabled' if enable_cache else 'Disabled'}")
         print(f"  - Max turns: {max_turns}")
     
@@ -203,7 +221,7 @@ class MagenticAgent:
             return "\n\n".join([f"Document {i+1}:\n{doc['text']}" for i, doc in enumerate(docs)])
         
         def sql_query(question: str) -> str:
-            """Execute SQL query on sales database"""
+            """Execute SQL query on database"""
             result = self.sql_tool.run(question)
             if "error" in result:
                 return f"Error: {result['error']}"
