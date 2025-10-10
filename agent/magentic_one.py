@@ -82,15 +82,11 @@ class UltraFastRouter:
         Returns: route_type ('sql', 'rag', or 'orchestrator')
         """
         query_lower = query.lower()
-        
-        # First: Check if it's a complex query (needs orchestrator)
-        if any(keyword in query_lower for keyword in cls.COMPLEX_KEYWORDS):
-            return 'orchestrator'
-        
-        # Second: Check for SQL query (product-specific)
+         
+        # Check for SQL query (product-specific)
         sql_score = sum(1 for keyword in cls.SQL_KEYWORDS if keyword in query_lower)
         
-        # Third: Check for RAG query (general knowledge)
+        # Check for RAG query (general knowledge)
         rag_score = sum(1 for keyword in cls.RAG_KEYWORDS if keyword in query_lower)
         
         # Decide based on scores with SQL priority for product queries
@@ -101,8 +97,7 @@ class UltraFastRouter:
             # If RAG keywords found and no SQL keywords, route to RAG
             return 'rag'
         else:
-            # Default to SQL for unknown queries (likely product-related)
-            return 'rag'
+            return 'orchestrator'
 
 
 class SmartCache:
@@ -273,23 +268,32 @@ class MagenticAgent:
             docs = self.vector_tool.retrieve(query, k=3)
             
             if not docs:
-                return "I couldn't find specific information about that in our e-commerce reports."
+                return "I couldn't find specific information about that in our database."
             
             # Prepare context from retrieved documents
             context = "\n\n".join([doc["text"] for doc in docs])
             
             # Generate response using LLM
+            system_msg = (
+            "You are a helpful, concise assistant for an e-commerce analytics product.\n"
+            "You MUST first infer the user's intent:\n"
+            "• If the message is smalltalk (greetings, pleasantries, jokes, about-you), "
+            "  respond naturally . Do NOT cite documents or domain facts.\n"
+            "• Otherwise, answer the user's question. Use the provided Context ONLY if it is relevant. "
+            "  If context is missing or insufficient, say so briefly and suggest one clarifying detail. "
+            "  Never fabricate numbers or claims.\n"
+            "Style: warm, direct, no fluff. Prefer bullet points only when helpful."
+        )
+            
             prompt = f"""Based on these e-commerce insights, answer the question: {query}
-
-Context:
-{context}
-
-Provide a clear, concise answer."""
+            Context: {context}
+            Provide a clear, concise answer."""
             
             # Use direct OpenAI client for simple calls
             response = await self.openai_client.chat.completions.create(
                 model=self.model,
-                messages=[{"role": "user", "content": prompt}]
+                messages=[{"role": "system", "content": system_msg},
+                          {"role": "user", "content": prompt}]
             )
             return response.choices[0].message.content
             
