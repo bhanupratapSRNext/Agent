@@ -1,10 +1,14 @@
 import uuid
+import os
 import asyncio
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 
 # Import Optimized Magentic-One implementation
 from agent.magentic_one import MagenticAgent
+
+# Import ResponseBuilder for enhanced outputs
+from agent.response_builder import ResponseBuilder
 
 # Import ACP configuration
 from acp_config import ACPConfig
@@ -24,9 +28,6 @@ class EcommerceAgent:
         self.agent_config = ACPConfig.get_agent_config()
         self._run_cache = {}  # Simple in-memory cache for runs
         
-        # Get API key from environment
-        import os
-        # Try OpenRouter first, fallback to OpenAI
         self.api_key = os.getenv("OPEN_ROUTER_KEY")
         if not self.api_key:
             raise ValueError("OPEN_ROUTER_KEY environment variable is required")
@@ -36,6 +37,12 @@ class EcommerceAgent:
         
         # Initialize the Magentic-One agent system
         self.magentic_agent = None  # Will be initialized async
+        
+        # Initialize response builder for enhanced outputs
+        self.response_builder = ResponseBuilder(
+            api_key=self.api_key,
+            model=self.model
+        )
     
     async def _ensure_agent_initialized(self):
         """Lazy initialization of Ultra-Fast Magentic-One agent (async)"""
@@ -73,12 +80,30 @@ class EcommerceAgent:
             # Use Magentic-One to automatically orchestrate the agents
             result = await self.magentic_agent.query(user_text)
             
-            # Extract data from the result
-            answer = result["response"]
+            # Extract raw response and metadata
+            raw_response = result["response"]
+            route = result.get("route", "unknown")
+            cached = result.get("cached", False)
+            execution_time = result.get("execution_time", 0)
+            
+            # Build enhanced response (skip if cached OR smalltalk - already clean)
+            if cached or route == 'smalltalk':
+                answer = raw_response
+            else:
+                answer = await self.response_builder.build_response(
+                    user_query=user_text,
+                    raw_response=raw_response,
+                    route=route,
+                    metadata={
+                        "execution_time_ms": execution_time,
+                        "cached": cached
+                    }
+                )
+            
             metadata = {
-                "execution_time_ms": result.get("execution_time", 0),
-                "route": result.get("route", "unknown"),
-                "cached": result.get("cached", False)
+                "execution_time_ms": execution_time,
+                "route": route,
+                "cached": cached
             }
             
             # Create routing info for metadata
@@ -120,6 +145,13 @@ class EcommerceAgent:
         except Exception as e:
             # Error handling
             print(f"[EcommerceAgent] Error: {str(e)}")
+            
+            # Build friendly error message
+            error_response = await self.response_builder.build_error_response(
+                error_message=str(e),
+                user_query=user_text if 'user_text' in locals() else "your request"
+            )
+            
             return {
                 "run_id": str(uuid.uuid4()),
                 "agent_name": self.name,
@@ -132,7 +164,7 @@ class EcommerceAgent:
                         "parts": [
                             {
                                 "content_type": "text/plain",
-                                "content": f"I apologize, but I encountered an error: {str(e)}",
+                                "content": error_response,
                                 "metadata": {"error": str(e)}
                             }
                         ]
