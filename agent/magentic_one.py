@@ -16,6 +16,8 @@ from openai import AsyncOpenAI
 from tools.vector_pinecone import VectorRetriever
 from tools.sql_postgres import SQLTool
 
+from agent.query_enricher import QueryEnricher
+
 class UltraFastRouter:
     """Smart router for query classification"""
     
@@ -178,12 +180,15 @@ class SmartCache:
 class MagenticAgent:
     """Magentic-One implementation"""
     
-    def __init__(self, api_key: str, enable_cache: bool = True, max_turns: int = 2, model: str = "openai/gpt-4o-mini"):
+    def __init__(self, api_key: str, enable_cache: bool = True, max_turns: int = 2, model: str = "openai/gpt-4o-mini", memory = None):
         self.api_key = api_key
         self.enable_cache = enable_cache
         self.max_turns = max_turns
         self.model = model
-        self.base_url = os.getenv("BASE_URL")
+        self.base_url = os.getenv("BASE_URL", "https://openrouter.ai/api/v1")
+        
+        # Initialize memory (RollingMemory passed from EcommerceAgent)
+        self.memory = memory
         
         # Initialize cache
         self.cache = SmartCache() if enable_cache else None
@@ -225,8 +230,24 @@ class MagenticAgent:
         print(f"  - Model: {model}")
         print(f"  - Provider: OpenRouter")
         print(f"  - Cache: {'Enabled' if enable_cache else 'Disabled'}")
+        print(f"  - Memory: {'Enabled' if memory else 'Disabled'}")
         print(f"  - Max turns: {max_turns}")
     
+    def get_memory(self, session_id: str) -> List:
+        """Get conversation history from memory"""
+        if self.memory:
+            return self.memory.get(session_id)
+        return []
+    
+    def clear_memory(self, session_id: str):
+        """Clear conversation history"""
+        if self.memory:
+            self.memory.clear(session_id)
+    
+    async def close(self):
+        """Close agent and cleanup"""
+        pass
+  
     def _init_team(self):
         """Lazy initialization of Magentic-One team"""
         if self._team is not None:
@@ -264,7 +285,8 @@ class MagenticAgent:
             description="Executes SQL queries on database"
         )
         
-        # Create Magentic-One team
+        # Create Magentic-One team (only with our specific agents, no web/file surfer)
+        # By only including RAG and SQL agents, we prevent internet fetching
         self._team = MagenticOneGroupChat(
             participants=[rag_agent, sql_agent],
             model_client=self.llm_client,
@@ -376,7 +398,6 @@ Do not cite sources or mention technical details. Just be conversational."""
             # Initialize team if needed
             self._init_team()
             
-            # Run team
             result = await self._team.run(task=query)
             
             # Extract final response
@@ -386,12 +407,15 @@ Do not cite sources or mention technical details. Just be conversational."""
                 return "I couldn't generate a complete response for this complex query."
                 
         except Exception as e:
-            print(f"❌ Orchestrator error: {e}")
             return "I encountered an error processing this complex query."
     
-    async def query(self, user_query: str) -> Dict[str, Any]:
+    async def query(self, user_query: str, session_id: str = "default") -> Dict[str, Any]:
         """
-        Execute query with ultra-fast routing
+        Execute query with ultra-fast routing and validation
+        
+        Args:
+            user_query: User's query string
+            session_id: Session identifier for memory management
         
         Returns:
         {
@@ -415,20 +439,31 @@ Do not cite sources or mention technical details. Just be conversational."""
                     'cached': True
                 }
         
-        # Route query
+        # Route query FIRST (no pre-validation for SQL/RAG/smalltalk)
         route_type = UltraFastRouter.route(user_query)
         
         print(f"🎯 Route: {route_type}")
+        
+        # Enrich query with conversation context for SQL, RAG, and ORCHESTRATOR routes
+        enriched_query = user_query
+        if route_type in ['sql', 'rag', 'orchestrator'] and self.memory:
+            enricher = QueryEnricher(
+                api_key=self.api_key,
+                model=self.model,
+                base_url=self.base_url
+            )
+            conversation_history = self.get_memory(session_id)
+            enriched_query = await enricher.enrich_query(user_query, conversation_history)
         
         # Execute based on route
         if route_type == 'smalltalk':
             response = await self._execute_smalltalk(user_query)
         elif route_type == 'sql':
-            response = await self._execute_sql(user_query)
+            response = await self._execute_sql(enriched_query)
         elif route_type == 'rag':
-            response = await self._execute_rag(user_query)
-        else:  # orchestrator
-            response = await self._execute_orchestrator(user_query)
+            response = await self._execute_rag(enriched_query)
+        else:
+            response = await self._execute_orchestrator(enriched_query)
         
         # Cache response
         if self.enable_cache:

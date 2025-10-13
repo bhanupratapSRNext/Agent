@@ -40,8 +40,8 @@ memory = RollingMemory(window_size=ACPConfig.MEMORY_WINDOW)
 retriever = VectorRetriever()
 sql_tool = SQLTool()
 
-# Initialize the Magentic-One agent
-ecommerce_agent = EcommerceAgent()
+# Initialize the Magentic-One agent with memory for context-aware validation
+ecommerce_agent = EcommerceAgent(memory=memory)
 
 
 # Setup all routes with dependencies
