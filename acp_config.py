@@ -41,7 +41,7 @@ class ACPConfig:
     # Business Logic Configuration (preserved from your original)
     DEFAULT_TOP_K = int(os.getenv("TOP_K", "5"))
     DEFAULT_RELEVANCE = float(os.getenv("RELEVANCE_THRESHOLD", "0.55"))
-    MEMORY_WINDOW = int(os.getenv("MEMORY_WINDOW", "6"))
+    MEMORY_WINDOW = int(os.getenv("MEMORY_WINDOW", "10"))
     
     # Database Configuration (for run storage)
     DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./acp_runs.db")

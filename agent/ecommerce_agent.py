@@ -151,7 +151,6 @@ class EcommerceAgent:
                 "created_at": self._now_iso(),
                 "finished_at": self._now_iso()
             }
-            
             return response
             
         except Exception as e:
