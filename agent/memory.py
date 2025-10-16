@@ -9,7 +9,7 @@ from collections import defaultdict, deque
 from typing import Deque, Dict, List, Tuple
 
 class RollingMemory:
-    def __init__(self, window_size: int = 6):
+    def __init__(self, window_size: int = 10):
         self.window_size = window_size
         self._store: Dict[str, Deque[Tuple[str, str]]] = defaultdict(lambda: deque(maxlen=self.window_size))
 

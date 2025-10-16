@@ -22,7 +22,7 @@ class EcommerceAgent:
     to specialized agents (RAG and SQL) without manual intent classification.
     """
     
-    def __init__(self):
+    def __init__(self, memory=None):
         self.name = "ecommerce-magentic-one"
         self.description = "Intelligent e-commerce agent powered by Microsoft's Magentic-One multi-agent orchestrator"
         self.agent_config = ACPConfig.get_agent_config()
@@ -34,6 +34,9 @@ class EcommerceAgent:
 
         # Get model from environment or use default
         self.model = os.getenv("OPENROUTER_MODEL")
+        
+        # Store memory instance for conversation context
+        self.memory = memory
         
         # Initialize the Magentic-One agent system
         self.magentic_agent = None  # Will be initialized async
@@ -51,7 +54,8 @@ class EcommerceAgent:
                 api_key=self.api_key,
                 model=self.model,
                 max_turns=2,  # Reduced for faster responses
-                enable_cache=True  # Enable caching
+                enable_cache=True,  # Enable caching
+                memory=self.memory  # Pass memory for context-aware validation
             )
     
     async def execute_agent(self, request, session_id):
@@ -77,8 +81,12 @@ class EcommerceAgent:
             
             print(f"[Agent] Processing query: '{user_text}' for session: {session_id}")
             
+            # Store user query in memory
+            if self.memory:
+                self.memory.append(session_id, "user", user_text)
+            
             # Use Magentic-One to automatically orchestrate the agents
-            result = await self.magentic_agent.query(user_text)
+            result = await self.magentic_agent.query(user_text, session_id)
             
             # Extract raw response and metadata
             raw_response = result["response"]
@@ -99,6 +107,10 @@ class EcommerceAgent:
                         "cached": cached
                     }
                 )
+            
+            # Store assistant response in memory
+            if self.memory:
+                self.memory.append(session_id, "assistant", answer)
             
             metadata = {
                 "execution_time_ms": execution_time,
@@ -139,7 +151,6 @@ class EcommerceAgent:
                 "created_at": self._now_iso(),
                 "finished_at": self._now_iso()
             }
-            
             return response
             
         except Exception as e:
@@ -173,59 +184,6 @@ class EcommerceAgent:
                 "created_at": self._now_iso(),
                 "finished_at": self._now_iso()
             }
-    
-    # async def execute(self, request):
-    #     """
-    #     Legacy execute method for backward compatibility
-        
-    #     Args:
-    #         request: The request object
-            
-    #     Returns:
-    #         Response dictionary
-    #     """
-    #     # Generate session ID if not provided
-    #     session_id = getattr(request, 'session_id', None) or str(uuid.uuid4())
-    #     return await self.execute_agent(request, session_id)
-    
-    # async def execute_streaming(self, request, session_id):
-    #     """
-    #     Execute with streaming response (async generator)
-        
-    #     Args:
-    #         request: The request object
-    #         session_id: Session identifier
-            
-    #     Yields:
-    #         Response chunks as they become available
-    #     """
-    #     try:
-    #         # Ensure agent is initialized
-    #         await self._ensure_agent_initialized()
-            
-    #         # Extract user input
-    #         user_text = request.input[0].parts[0].content if request.input and request.input[0].parts else ""
-            
-    #         if not user_text.strip():
-    #             raise ValueError("Empty user input provided")
-            
-    #         print(f"[EcommerceAgent] Processing query (streaming): '{user_text}'")
-            
-    #         # Use Magentic-One streaming
-    #         async for chunk in self.magentic_agent.execute_streaming(session_id, user_text):
-    #             yield {
-    #                 "chunk": chunk,
-    #                 "session_id": session_id,
-    #                 "timestamp": self._now_iso()
-    #             }
-                
-    #     except Exception as e:
-    #         yield {
-    #             "chunk": f"Error: {str(e)}",
-    #             "session_id": session_id,
-    #             "error": str(e),
-    #             "timestamp": self._now_iso()
-    #         }
     
     def get_memory(self, session_id: str) -> List:
         """
