@@ -33,78 +33,18 @@ def is_obvious_smalltalk(query: str) -> bool:
     query_lower = query.lower().strip()
     return any(keyword in query_lower for keyword in SMALLTALK_KEYWORDS)
 
-
-class SmartCache:
-    """Enhanced caching with statistics"""
-    
-    def __init__(self, max_size: int = 200, ttl_seconds: int = 3600):
-        self.cache: Dict[str, tuple[str, datetime]] = {}
-        self.max_size = max_size
-        self.ttl = timedelta(seconds=ttl_seconds)
-        
-        # Statistics
-        self.hits = 0
-        self.misses = 0
-    
-    def _hash_query(self, query: str) -> str:
-        return hashlib.md5(query.lower().strip().encode()).hexdigest()
-    
-    def get(self, query: str) -> Optional[str]:
-        """Get cached response if available and not expired"""
-        query_hash = self._hash_query(query)
-        
-        if query_hash in self.cache:
-            response, timestamp = self.cache[query_hash]
-            
-            # Check if expired
-            if datetime.now() - timestamp < self.ttl:
-                self.hits += 1
-                return response
-            else:
-                # Remove expired entry
-                del self.cache[query_hash]
-        
-        self.misses += 1
-        return None
-    
-    def set(self, query: str, response: str):
-        """Cache a response"""
-        query_hash = self._hash_query(query)
-        
-        # Evict oldest if at max size
-        if len(self.cache) >= self.max_size:
-            oldest_key = min(self.cache.keys(), key=lambda k: self.cache[k][1])
-            del self.cache[oldest_key]
-        
-        self.cache[query_hash] = (response, datetime.now())
-    
-    def get_stats(self) -> Dict[str, Any]:
-        """Get cache statistics"""
-        total_requests = self.hits + self.misses
-        hit_rate = (self.hits / total_requests * 100) if total_requests > 0 else 0
-        
-        return {
-            'size': len(self.cache),
-            'hits': self.hits,
-            'misses': self.misses,
-            'hit_rate': f"{hit_rate:.1f}%"
-        }
-
 class MagenticAgent:
     """Magentic-One implementation"""
     
-    def __init__(self, api_key: str, enable_cache: bool = True, max_turns: int = 2, model: str = "openai/gpt-4o-mini", memory = None):
+    def __init__(self, api_key: str, max_turns: int = 2, model: str = "openai/gpt-4o-mini", memory = None):
         self.api_key = api_key
-        self.enable_cache = enable_cache
         self.max_turns = max_turns
         self.model = model
         self.base_url = os.getenv("BASE_URL", "https://openrouter.ai/api/v1")
         
         # Initialize memory (RollingMemory passed from EcommerceAgent)
+        # This now handles both conversation history AND response caching
         self.memory = memory
-        
-        # Initialize cache
-        self.cache = SmartCache() if enable_cache else None
         
         # Initialize tools
         self.vector_tool = VectorRetriever()
@@ -142,7 +82,7 @@ class MagenticAgent:
         print("✅ Magentic Agent initialized")
         print(f"  - Model: {model}")
         print(f"  - Provider: OpenRouter")
-        print(f"  - Cache: {'Enabled' if enable_cache else 'Disabled'}")
+        print(f"  - Cache: {'Enabled' if memory else 'Disabled'}")
         print(f"  - Memory: {'Enabled' if memory else 'Disabled'}")
         print(f"  - Max turns: {max_turns}")
     
@@ -541,9 +481,9 @@ Synthesize these into a single, coherent answer that addresses the original quer
         """
         start_time = time.time()
         
-        # Check cache first
-        if self.enable_cache:
-            cached_response = self.cache.get(user_query)
+        # Check cache first (using memory system)
+        if self.memory:
+            cached_response = self.memory.get_cached_response(user_query, session_id)
             if cached_response:
                 execution_time = (time.time() - start_time) * 1000
                 return {
@@ -587,10 +527,6 @@ Synthesize these into a single, coherent answer that addresses the original quer
                 # Complex orchestration with dependencies
                 response = await self._execute_sequential(enriched_query)
         
-        # Cache response
-        if self.enable_cache:
-            self.cache.set(user_query, response)
-        
         execution_time = (time.time() - start_time) * 1000
         
         return {
@@ -601,7 +537,7 @@ Synthesize these into a single, coherent answer that addresses the original quer
         }
     
     def get_cache_stats(self) -> Dict[str, Any]:
-        """Get cache statistics"""
-        if self.cache:
-            return self.cache.get_stats()
+        """Get cache statistics from memory system"""
+        if self.memory:
+            return self.memory.get_cache_stats()
         return {'cache': 'disabled'}

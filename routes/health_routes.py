@@ -23,6 +23,7 @@ def health_check():
         "timestamp": ecommerce_agent._now_iso(),
         "agents": 1,
         "memory_sessions": len(memory._store),
+        "cache_stats": memory.get_cache_stats(),
         "configuration": {
             "rate_limiting": ACPConfig.ENABLE_RATE_LIMITING,
             "authentication": ACPConfig.ENABLE_AUTHENTICATION,

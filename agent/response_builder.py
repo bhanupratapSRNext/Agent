@@ -69,6 +69,19 @@ class ResponseBuilder:
             )
             if formatted_json:
                 return formatted_json
+            else:
+                # If JSON formatting failed but we detected product data,
+                # try a simple fallback conversion before falling back to raw response
+                print(f"⚠️ Product JSON formatting failed, trying simple fallback...")
+                simple_json = self._simple_json_fallback(raw_response, user_query)
+                if simple_json:
+                    print(f"✅ Simple fallback JSON conversion successful")
+                    return simple_json
+                else:
+                    print(f"⚠️ All JSON formatting attempts failed, returning raw response to preserve structure")
+                    return raw_response
+        else:
+            print(f"ℹ️ No product details detected, proceeding with standard text enhancement")
         
         # Standard response enhancement for non-product queries
         # Build system prompt based on route type
@@ -121,12 +134,22 @@ class ResponseBuilder:
             r'\[.*?\].*?\[.*?\]',  # List of lists
             # Check if it looks like tabular data
             r'(?:\w+:\s*\d+.*?\n){3,}',  # Multiple key:value pairs
+            # PostgreSQL-style dict output
+            r'\{["\'](?:product_|sku|price|quantity)',  # Dict with product keys
+            # List of dicts pattern
+            r'\[\s*\{.*?product.*?\}',  # List containing dicts with product info
         ]
         
         response_lower = raw_response.lower()
         
         # Count matching patterns
         match_count = sum(1 for pattern in product_indicators if re.search(pattern, response_lower))
+        
+        # Also check for specific SQL result patterns
+        # Look for patterns like [{'product_id': 1, 'name': '...'}]
+        dict_list_pattern = r'\[\s*\{[^}]*(?:product|sku|price|sales|revenue|quantity)[^}]*\}'
+        if re.search(dict_list_pattern, response_lower):
+            match_count += 2  # Strong indicator
         
         # If multiple product indicators are present, it's likely product data
         return match_count >= 2
@@ -223,17 +246,36 @@ Extract and format this as JSON following the structure specified. Output only t
             
             json_response = completion.choices[0].message.content.strip()
             
-            # Extract JSON if wrapped in markdown code blocks
-            json_match = re.search(r'\{.*\}', json_response, re.DOTALL)
-            if json_match:
-                json_str = json_match.group()
-                
-                # Validate it's proper JSON
-                parsed = json.loads(json_str)
-                
-                # Return formatted JSON string
-                return json.dumps(parsed, indent=2, ensure_ascii=False)
+            # Try multiple ways to extract JSON
+            json_str = None
             
+            # Method 1: Extract JSON from markdown code blocks
+            json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', json_response, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(1)
+            else:
+                # Method 2: Extract raw JSON object
+                json_match = re.search(r'\{.*\}', json_response, re.DOTALL)
+                if json_match:
+                    json_str = json_match.group()
+                else:
+                    # Method 3: Try the entire response if it looks like JSON
+                    if json_response.strip().startswith('{') and json_response.strip().endswith('}'):
+                        json_str = json_response.strip()
+            
+            if json_str:
+                try:
+                    # Validate it's proper JSON
+                    parsed = json.loads(json_str)
+                    
+                    # Return formatted JSON string
+                    return json.dumps(parsed, indent=2, ensure_ascii=False)
+                    
+                except json.JSONDecodeError as e:
+                    print(f"⚠️ JSON parsing failed for extracted string: {e}")
+                    print(f"Extracted JSON string: {json_str[:200]}...")
+            
+            print(f"⚠️ No valid JSON found in LLM response: {json_response[:200]}...")
             return None
             
         except json.JSONDecodeError as e:
@@ -241,6 +283,62 @@ Extract and format this as JSON following the structure specified. Output only t
             return None
         except Exception as e:
             print(f"⚠️ Product JSON formatting error: {e}")
+            return None
+    
+    def _simple_json_fallback(self, raw_response: str, user_query: str) -> Optional[str]:
+        """
+        Simple fallback to convert raw response to basic JSON structure
+        when LLM-based formatting fails
+        """
+        try:
+            # Try to parse if it's already JSON-like
+            if raw_response.strip().startswith('[') or raw_response.strip().startswith('{'):
+                try:
+                    parsed = json.loads(raw_response)
+                    if isinstance(parsed, list) and len(parsed) > 0:
+                        # Wrap list in basic structure
+                        result = {
+                            "summary": f"Found {len(parsed)} items",
+                            "total_count": len(parsed),
+                            "products": parsed,
+                            "metadata": {
+                                "data_source": "database",
+                                "query_type": "product_data"
+                            }
+                        }
+                        return json.dumps(result, indent=2, ensure_ascii=False)
+                except json.JSONDecodeError:
+                    pass
+            
+            # Try to extract from string representation of Python list/dict
+            if '[{' in raw_response and '}]' in raw_response:
+                # Find the list part
+                import ast
+                try:
+                    # Use ast.literal_eval for safe evaluation
+                    start = raw_response.find('[{')
+                    end = raw_response.rfind('}]') + 2
+                    list_str = raw_response[start:end]
+                    parsed = ast.literal_eval(list_str)
+                    
+                    if isinstance(parsed, list) and len(parsed) > 0:
+                        result = {
+                            "summary": f"Found {len(parsed)} items",
+                            "total_count": len(parsed),
+                            "products": parsed,
+                            "metadata": {
+                                "data_source": "database", 
+                                "query_type": "product_data"
+                            }
+                        }
+                        return json.dumps(result, indent=2, ensure_ascii=False)
+                except (ValueError, SyntaxError) as e:
+                    print(f"⚠️ Simple JSON fallback failed to parse list: {e}")
+                    
+            return None
+            
+        except Exception as e:
+            print(f"⚠️ Simple JSON fallback error: {e}")
             return None
     
     def _get_system_prompt(self, route: str) -> str:

@@ -54,8 +54,7 @@ class EcommerceAgent:
                 api_key=self.api_key,
                 model=self.model,
                 max_turns=2,  # Reduced for faster responses
-                enable_cache=True,  # Enable caching
-                memory=self.memory  # Pass memory for context-aware validation
+                memory=self.memory  # Pass memory for context-aware validation and caching
             )
     
     async def execute_agent(self, request, session_id):
@@ -111,6 +110,10 @@ class EcommerceAgent:
             # Store assistant response in memory
             if self.memory:
                 self.memory.append(session_id, "assistant", answer)
+            
+            # Cache the final formatted response (only if not already cached)
+            if not cached and self.memory:
+                self.memory.cache_response(user_text, answer, session_id)
             
             metadata = {
                 "execution_time_ms": execution_time,
