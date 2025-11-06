@@ -1,14 +1,14 @@
-langchain
+# langchain
 # langgraph
 pydantic
 python-dotenv
 pymongo>=4.8
-langchain-pinecone
+# langchain-pinecone
 pinecone-client
 langgraph>=0.2.45
-langchain_community
-langchain_openai
-langchain_experimental
+# langchain_community
+# langchain_openai
+# langchain_experimental
 fastapi
 python-dotenv
 openai
@@ -20,3 +20,12 @@ acp-sdk-python
 magentic>=0.12.3
 gunicorn
 uvicorn
+
+
+langchain==0.3.27
+langchain-community==0.3.30
+langchain-core==0.3.76
+langchain-experimental==0.3.4
+langchain-openai==0.3.33
+langchain-pinecone==0.2.12
+langchain-text-splitters==0.3.11
