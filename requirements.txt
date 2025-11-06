@@ -16,7 +16,7 @@ sqlalchemy
 psycopg2-binary
 tiktoken
 google-generativeai
-acp-sdk-python
+# acp-sdk-python
 magentic>=0.12.3
 gunicorn
 uvicorn

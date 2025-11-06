@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from routes.agent_routes import router as agent_router
+# from routes.agent_routes import router as agent_router
 from routes.run_routes import router as run_router, set_agent as set_run_agent
 from routes.health_routes import router as health_router, set_agent_and_memory
 from api.pinecone_index import router as pinecone_router
@@ -19,7 +19,7 @@ def setup_routes(app: FastAPI, ecommerce_agent, memory):
     set_agent_and_memory(ecommerce_agent, memory)
     
     # Include all routers
-    app.include_router(agent_router)
+    # app.include_router(agent_router)
     app.include_router(run_router)
     app.include_router(health_router)
     app.include_router(pinecone_router)  # Add Pinecone API router
