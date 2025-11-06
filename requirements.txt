@@ -21,6 +21,11 @@ magentic>=0.12.3
 gunicorn
 uvicorn
 
+# Microsoft Autogen for Magentic-One
+autogen-agentchat>=0.2.0
+autogen-core>=0.2.0
+autogen-ext>=0.2.0
+
 
 langchain==0.3.27
 langchain-community==0.3.30
