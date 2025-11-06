@@ -1,14 +1,11 @@
 langchain
 # langgraph
 pydantic
-Flask
 python-dotenv
 pymongo>=4.8
 langchain-pinecone
 pinecone-client
 langgraph>=0.2.45
-flask
-flask_cors
 langchain_community
 langchain_openai
 langchain_experimental
@@ -22,3 +19,4 @@ google-generativeai
 acp-sdk-python
 magentic>=0.12.3
 gunicorn
+uvicorn
