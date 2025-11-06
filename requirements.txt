@@ -21,7 +21,7 @@ acp-sdk
 magentic>=0.12.3
 gunicorn
 uvicorn
-
+sentence-transformers
 # Microsoft Autogen for Magentic-One
 autogen-agentchat>=0.2.0
 autogen-core>=0.2.0
