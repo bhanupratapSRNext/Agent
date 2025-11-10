@@ -4,6 +4,7 @@ from routes.run_routes import router as run_router, set_agent as set_run_agent
 from routes.health_routes import router as health_router, set_agent_and_memory
 from api.pinecone_index import router as pinecone_router
 from api.create_connection import router as connection_router
+from scraper.scrapper import router as scraper_router  # Add scraper router
 
 def setup_routes(app: FastAPI, ecommerce_agent, memory):
     """
@@ -24,6 +25,7 @@ def setup_routes(app: FastAPI, ecommerce_agent, memory):
     app.include_router(health_router)
     app.include_router(pinecone_router)  # Add Pinecone API router
     app.include_router(connection_router)  # Add Database Connection API router
+    app.include_router(scraper_router)  # Add Scraper API router
     
     return app
 
@@ -63,6 +65,9 @@ def get_route_info():
             "PUT /connections/{connection_id}": "Update connection credentials",
             "DELETE /connections/{connection_id}": "Delete a connection",
             "POST /connections/{connection_id}/test": "Test a database connection"
+        },
+        "scraper_routes": {
+            "GET /fetch/data": "Fetch data using scraper"
         },
         "main_routes": {
             "GET /": "Service information",
