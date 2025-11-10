@@ -324,91 +324,94 @@ class UploadPDFResponse(BaseModel):
     filename: str
     chunks_created: int
     upserted_count: int
-
-
+    
 @router.post("/create-embeddings", response_model=UploadPDFResponse)
-async def upload_pdf_and_create_embeddings(
-    file: UploadFile = File(..., description="PDF file to process"),
-    index_name: str = Form(..., description="Pinecone index name to store embeddings"),
-    chunk_size: int = Form(500, description="Chunk size for text splitting"),
-    chunk_overlap: int = Form(20, description="Chunk overlap for text splitting"),
-    model_name: str = Form("sentence-transformers/all-MiniLM-L6-v2", description="HuggingFace embedding model"),
-    api_key: Optional[str] = Form(None, description="Optional Pinecone API key")
-):
-    temp_dir = None
-    try:
-        # Validate file type
-        if not file.filename.lower().endswith('.pdf'):
-            return "Only PDF files are supported"
+async def test():
+    return {"success": True, "message": "Test endpoint working", "index_name": "test_index", "filename": "test.pdf", "chunks_created": 0, "upserted_count": 0}
+
+# @router.post("/create-embeddings", response_model=UploadPDFResponse)
+# async def upload_pdf_and_create_embeddings(
+#     file: UploadFile = File(..., description="PDF file to process"),
+#     index_name: str = Form(..., description="Pinecone index name to store embeddings"),
+#     chunk_size: int = Form(500, description="Chunk size for text splitting"),
+#     chunk_overlap: int = Form(20, description="Chunk overlap for text splitting"),
+#     model_name: str = Form("sentence-transformers/all-MiniLM-L6-v2", description="HuggingFace embedding model"),
+#     api_key: Optional[str] = Form(None, description="Optional Pinecone API key")
+# ):
+#     temp_dir = None
+#     try:
+#         # Validate file type
+#         if not file.filename.lower().endswith('.pdf'):
+#             return "Only PDF files are supported"
         
-        # Resolve API key
-        resolved_api_key = api_key or os.getenv("PINECONE_API_KEY")
-        if not resolved_api_key:
-            return "PINECONE_API_KEY not provided"
+#         # Resolve API key
+#         resolved_api_key = api_key or os.getenv("PINECONE_API_KEY")
+#         if not resolved_api_key:
+#             return "PINECONE_API_KEY not provided"
         
-        # Initialize Pinecone client and verify index exists
-        pc = Pinecone(api_key=resolved_api_key)
-        existing_indexes = [idx["name"] for idx in pc.list_indexes().indexes]
-        if index_name not in existing_indexes:
-            return f"Index '{index_name}' not found. Create it first via /pinecone/create-index"
+#         # Initialize Pinecone client and verify index exists
+#         pc = Pinecone(api_key=resolved_api_key)
+#         existing_indexes = [idx["name"] for idx in pc.list_indexes().indexes]
+#         if index_name not in existing_indexes:
+#             return f"Index '{index_name}' not found. Create it first via /pinecone/create-index"
         
-        # Create temporary directory for PDF processing
-        temp_dir = tempfile.mkdtemp()
-        temp_file_path = Path(temp_dir) / file.filename
+#         # Create temporary directory for PDF processing
+#         temp_dir = tempfile.mkdtemp()
+#         temp_file_path = Path(temp_dir) / file.filename
         
-        # Save uploaded file to temporary location
-        with open(temp_file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+#         # Save uploaded file to temporary location
+#         with open(temp_file_path, "wb") as buffer:
+#             shutil.copyfileobj(file.file, buffer)
         
-        # Load PDF using PyPDFLoader
-        loader = PyPDFLoader(str(temp_file_path))
-        documents = loader.load()
+#         # Load PDF using PyPDFLoader
+#         loader = PyPDFLoader(str(temp_file_path))
+#         documents = loader.load()
         
-        if not documents:
-            return "No content could be extracted from the PDF"
+#         if not documents:
+#             return "No content could be extracted from the PDF"
         
-        # Split documents into chunks
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap
-        )
-        chunks = text_splitter.split_documents(documents)
+#         # Split documents into chunks
+#         text_splitter = RecursiveCharacterTextSplitter(
+#             chunk_size=chunk_size,
+#             chunk_overlap=chunk_overlap
+#         )
+#         chunks = text_splitter.split_documents(documents)
         
-        if not chunks:
-            return "No text chunks created from the PDF"
+#         if not chunks:
+#             return "No text chunks created from the PDF"
             
-        # Create embeddings
-        embeddings = HuggingFaceEmbeddings(model_name=model_name)
+#         # Create embeddings
+#         embeddings = HuggingFaceEmbeddings(model_name=model_name)
         
-        # Store in Pinecone using LangChain helper
-        docsearch = PineconeVectorStore.from_documents(
-            documents=chunks,
-            index_name=index_name,
-            embedding=embeddings,
-        )
+#         # Store in Pinecone using LangChain helper
+#         docsearch = PineconeVectorStore.from_documents(
+#             documents=chunks,
+#             index_name=index_name,
+#             embedding=embeddings,
+#         )
         
-        return UploadPDFResponse(
-            success=True,
-            message=f"Successfully processed '{file.filename}' and stored embeddings in Pinecone",
-            index_name=index_name,
-            filename=file.filename,
-            chunks_created=len(chunks),
-            upserted_count=len(chunks)
-        )
+#         return UploadPDFResponse(
+#             success=True,
+#             message=f"Successfully processed '{file.filename}' and stored embeddings in Pinecone",
+#             index_name=index_name,
+#             filename=file.filename,
+#             chunks_created=len(chunks),
+#             upserted_count=len(chunks)
+#         )
         
-    except HTTPException:
-        raise
-    except Exception as e:
-        import traceback
-        error_trace = traceback.format_exc()
-        print(f"Error processing PDF: {error_trace}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error processing PDF: {str(e)}"
-        )
-    finally:
-        if temp_dir and Path(temp_dir).exists():
-            shutil.rmtree(temp_dir, ignore_errors=True)
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         import traceback
+#         error_trace = traceback.format_exc()
+#         print(f"Error processing PDF: {error_trace}")
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail=f"Error processing PDF: {str(e)}"
+#         )
+#     finally:
+#         if temp_dir and Path(temp_dir).exists():
+#             shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 

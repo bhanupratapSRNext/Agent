@@ -1,8 +1,12 @@
 import os
 import uuid
+import logging
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+# Suppress watchfiles INFO logs
+logging.getLogger('watchfiles').setLevel(logging.WARNING)
 
 from agent.memory import RollingMemory
 from tools.vector_pinecone import VectorRetriever
