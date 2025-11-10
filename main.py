@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 logging.getLogger('watchfiles').setLevel(logging.WARNING)
 
 from agent.memory import RollingMemory
-from tools.vector_pinecone import VectorRetriever
+# from tools.vector_pinecone import VectorRetriever
 from tools.sql_postgres import SQLTool
 
 # Import ACP configuration
@@ -41,7 +41,7 @@ app.add_middleware(
 
 # Initialize your business logic components (kept for backward compatibility)
 memory = RollingMemory(window_size=ACPConfig.MEMORY_WINDOW)
-retriever = VectorRetriever()
+# retriever = VectorRetriever()
 sql_tool = SQLTool()
 
 # Initialize the Magentic-One agent with memory for context-aware validation

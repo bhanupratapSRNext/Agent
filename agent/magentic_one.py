@@ -13,7 +13,7 @@ from autogen_agentchat.messages import TextMessage
 # Direct OpenAI import for simple LLM calls
 from openai import AsyncOpenAI
 
-from tools.vector_pinecone import VectorRetriever
+# from tools.vector_pinecone import VectorRetriever
 from tools.sql_postgres import SQLTool
 
 import json
@@ -47,7 +47,7 @@ class MagenticAgent:
         self.memory = memory
         
         # Initialize tools
-        self.vector_tool = VectorRetriever()
+        # self.vector_tool = VectorRetriever()
         self.sql_tool = SQLTool()
         
         # Initialize LLM clients
