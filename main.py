@@ -21,6 +21,9 @@ from agent.ecommerce_agent import EcommerceAgent
 # Import route manager
 from routes.route_manager import setup_routes
 
+# Import scheduler functions
+from scheduler.run_scraper import start_scheduler, stop_scheduler
+
 # Load environment variables
 load_dotenv()
 
@@ -51,6 +54,24 @@ ecommerce_agent = EcommerceAgent(memory=memory)
 # Setup all routes with dependencies
 setup_routes(app, ecommerce_agent, memory)
 
+
+# Application lifecycle events
+@app.on_event("startup")
+async def startup_event():
+    """Initialize scheduler on application startup"""
+    logging.info("Starting application and scheduler...")
+    start_scheduler()
+    logging.info("Scheduler started successfully")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Shutdown scheduler gracefully on application exit"""
+    logging.info("Shutting down application and scheduler...")
+    stop_scheduler()
+    logging.info("Scheduler stopped successfully")
+
+
 # Main service endpoint
 @app.get("/")
 def home():
@@ -66,7 +87,8 @@ def home():
             "timeout_seconds": ACPConfig.AGENT_TIMEOUT_SECONDS,
             "rate_limiting": ACPConfig.ENABLE_RATE_LIMITING,
             "authentication": ACPConfig.ENABLE_AUTHENTICATION
-        }
+        },
+        "scheduler": "active"
     }
 
 if __name__ == "__main__":

@@ -41,3 +41,5 @@ boto3
 playwright
 Werkzeug
 PyJWT
+httpx
+APScheduler
