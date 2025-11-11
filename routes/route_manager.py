@@ -5,6 +5,7 @@ from routes.health_routes import router as health_router, set_agent_and_memory
 from api.pinecone_index import router as pinecone_router
 from api.create_connection import router as connection_router
 from scraper.scrapper import router as scraper_router  # Add scraper router
+from api.user_api import router as user_router  # Add user API router
 
 def setup_routes(app: FastAPI, ecommerce_agent, memory):
     """
@@ -26,6 +27,7 @@ def setup_routes(app: FastAPI, ecommerce_agent, memory):
     app.include_router(pinecone_router)  # Add Pinecone API router
     app.include_router(connection_router)  # Add Database Connection API router
     app.include_router(scraper_router)  # Add Scraper API router
+    app.include_router(user_router)  # Add User API router
     
     return app
 
