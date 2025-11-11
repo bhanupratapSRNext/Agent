@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 import tempfile
 import shutil
 from pathlib import Path
+from config.mongo_con import client
 
 try:
     from pinecone.grpc import PineconeGRPC as Pinecone
@@ -20,7 +21,7 @@ from pinecone import ServerlessSpec
 
 load_dotenv()
 
-router = APIRouter(prefix="/pinecone", tags=["Pinecone Management"])
+router = APIRouter(prefix="/configure", tags=["Pinecone Management"])
 
 
 class CreateIndexRequest(BaseModel):
@@ -31,6 +32,7 @@ class CreateIndexRequest(BaseModel):
     cloud: str = Field(default="aws", description="Cloud provider (aws, gcp, azure)")
     region: str = Field(default="us-east-1", description="Cloud region")
     api_key: Optional[str] = Field(None, description="Optional API key (uses env var if not provided)")
+    user_id: str = Field(..., description="User ID associated with this request")
 
 
 class CreateIndexResponse(BaseModel):
@@ -94,51 +96,74 @@ async def create_index(request: CreateIndexRequest):
         api_key = request.api_key or os.getenv("PINECONE_API_KEY")
         
         if not api_key:
-            return "Pinecone API key not provided and not found in environment variables"
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Pinecone API key not provided and not found in environment variables"
+            )
         
         # Initialize Pinecone client
         pc = Pinecone(api_key=api_key)
         
-        # Check if index already exists
-        existing_indexes = [idx["name"] for idx in pc.list_indexes().indexes]
+        # List all indexes and check if index already exists (same logic as /list-indexes)
+        indexes_list = pc.list_indexes()
+        existing_indexes = [idx["name"] for idx in indexes_list.indexes]
+        
+        # Check if index already exists in Pinecone
         if request.index_name in existing_indexes:
             return CreateIndexResponse(
-            success=True,
-            message=f"Index '{request.index_name}' alredy exist",
-            index_name=request.index_name,
-            details={
-                "dimension": request.dimension,
-                "metric": request.metric,
-                "cloud": request.cloud,
-                "region": request.region
-            }
-        )
+                success=False,
+                message=f"Index '{request.index_name}' already exists in Pinecone",
+                index_name=request.index_name,
+                details={
+                    "dimension": request.dimension,
+                    "metric": request.metric,
+                    "cloud": request.cloud,
+                    "region": request.region,
+                    "already_exists": True,
+                }
+            )
         
         # Validate metric
         valid_metrics = ["cosine", "euclidean", "dotproduct"]
         if request.metric not in valid_metrics:
-            return f"Invalid metric. Must be one of: {', '.join(valid_metrics)}"
-        
-        # Create the index
-        pc.create_index(
-            name=request.index_name,
-            dimension=request.dimension,
-            metric=request.metric,
-            spec=ServerlessSpec(
-                cloud=request.cloud,
-                region=request.region
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid metric. Must be one of: {', '.join(valid_metrics)}"
             )
-        )
+        
+        # Import MongoDB client
+        
+        
+        # MongoDB setup
+        collection = client["chat-bot"]
+        pinecone_indexes_coll = collection["Configuration"]
+        
+        # Save index metadata to MongoDB before creating in Pinecone
+        index_metadata = {
+            "index_name": request.index_name,
+            "dimension": request.dimension,
+            "metric": request.metric,
+            "cloud": request.cloud,
+            "region": request.region,
+            "created_at": None,  # Will be updated after successful creation
+            "status": "creating",
+            "user_id":request.user_id,
+            "processed":False
+        }
+        
+        # Insert into MongoDB
+        mongo_result = pinecone_indexes_coll.insert_one(index_metadata)
         
         return CreateIndexResponse(
             success=True,
-            message=f"Index '{request.index_name}' created successfully",
+            message=f"Index '{request.index_name}' successfully saved to MongoDB",
             index_name=request.index_name,
             details={
                 "dimension": request.dimension,
                 "metric": request.metric,
                 "cloud": request.cloud,
-                "region": request.region
+                "region": request.region,
+                "mongo_id": str(mongo_result.inserted_id)
             }
         )
         
@@ -149,6 +174,97 @@ async def create_index(request: CreateIndexRequest):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error creating index: {str(e)}"
         )
+
+
+
+
+class SaveURLRequest(BaseModel):
+    """Request model for saving URL to Configuration"""
+    root_url: str = Field(..., description="Website URL to save")
+    user_id: Optional[str] = Field(None, description="Optional user ID")
+
+
+class SaveURLResponse(BaseModel):
+    """Response model for URL save operation"""
+    success: bool
+    message: str
+    url: str
+    mongo_id: Optional[str] = None
+
+
+@router.post("/save", response_model=SaveURLResponse)
+async def save_url(request: SaveURLRequest):
+    """
+    Save or update URL in MongoDB Configuration collection based on user_id
+    
+    Args:
+        request: SaveURLRequest with URL and user_id
+        
+    Returns:
+        SaveURLResponse with save/update status
+    """
+    try:
+        # MongoDB setup
+        collection = client["chat-bot"]
+        configuration_coll = collection["Configuration"]
+        
+        # Validate that user_id is provided
+        if not request.user_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="user_id is required to save URL"
+            )
+        
+        # Check if document exists for this user_id
+        existing_config = configuration_coll.find_one({"user_id": request.user_id})
+        
+        from datetime import datetime
+        
+        if existing_config:
+            # Update existing document
+            update_data = {
+                "root_url": request.root_url,
+                "updated_at": datetime.utcnow(),
+                "status": "updated"
+            }
+            
+            configuration_coll.update_one(
+                {"user_id": request.user_id},
+                {"$set": update_data}
+            )
+            
+            return SaveURLResponse(
+                success=True,
+                message=f"URL '{request.root_url}' updated successfully for user_id '{request.user_id}'",
+                url=request.root_url,
+                mongo_id=str(existing_config["_id"])
+            )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error saving URL: {str(e)}"
+        )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 # @router.get("/list-indexes", response_model=ListIndexesResponse)
@@ -314,6 +430,7 @@ async def create_index(request: CreateIndexRequest):
 #             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
 #             detail=f"Error getting index stats: {str(e)}"
 #         )
+
 
 
 class UploadPDFResponse(BaseModel):

@@ -2,7 +2,7 @@ from fastapi import FastAPI
 # from routes.agent_routes import router as agent_router
 from routes.run_routes import router as run_router, set_agent as set_run_agent
 from routes.health_routes import router as health_router, set_agent_and_memory
-from api.pinecone_index import router as pinecone_router
+from api.configuration_detail import router as pinecone_router
 from api.create_connection import router as connection_router
 from scraper.scrapper import router as scraper_router  # Add scraper router
 from api.user_api import router as user_router  # Add user API router
