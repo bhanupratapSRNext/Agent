@@ -19,7 +19,8 @@ import boto3
 from botocore.config import Config as BotoConfig
 BEDROCK_AVAILABLE = True
 
-
+import os                      
+os.environ['AWS_BEARER_TOKEN_BEDROCK'] = os.getenv('AWS_BEARER_TOKEN_BEDROCK')
 
 class BedrockParserGenerator:
     """Uses AWS Bedrock to extract product data and generate parser functions."""
@@ -33,7 +34,7 @@ class BedrockParserGenerator:
         # You can set AWS credentials via environment variables:
         # AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION
         self.bedrock_config = BotoConfig(
-            region_name=os.getenv('AWS_REGION', 'us-east-1'),
+            region_name=os.getenv('AWS_REGION'),
             retries={'max_attempts': 3, 'mode': 'adaptive'}
         )
         
@@ -45,7 +46,7 @@ class BedrockParserGenerator:
         
         # Model configuration
         # Using Claude 3 Sonnet - good balance of speed and capability
-        self.model_id = os.getenv('BEDROCK_MODEL_ID', 'us.anthropic.claude-sonnet-4-5-20250929-v1:0')
+        self.model_id = os.getenv('BEDROCK_MODEL_ID')
         
         print(f"✓ AWS Bedrock client initialized")
         print(f"  Region: {self.bedrock_config.region_name}")

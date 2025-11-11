@@ -6,6 +6,7 @@ from api.configuration_detail import router as pinecone_router
 from api.create_connection import router as connection_router
 from scraper.scrapper import router as scraper_router  # Add scraper router
 from api.user_api import router as user_router  # Add user API router
+from api.fetch_configuration import router as fetch_config_router  # Add fetch configuration router
 
 def setup_routes(app: FastAPI, ecommerce_agent, memory):
     """
@@ -28,6 +29,7 @@ def setup_routes(app: FastAPI, ecommerce_agent, memory):
     app.include_router(connection_router)  # Add Database Connection API router
     app.include_router(scraper_router)  # Add Scraper API router
     app.include_router(user_router)  # Add User API router
+    app.include_router(fetch_config_router)  # Add Fetch Configuration API router
     
     return app
 

@@ -24,11 +24,11 @@ class ProductDBSaver:
     def __init__(self):
         """Initialize database connection using environment variables."""
         self.db_config = {
-            'host': os.getenv('PG_HOST', 'localhost'),
-            'port': int(os.getenv('PG_PORT', 5432)),
-            'database': os.getenv('PG_DB', 'agent'),
-            'user': os.getenv('PG_USER', 'postgres'),
-            'password': os.getenv('PG_PASSWORD', 'postgres')
+            'host': os.getenv('PG_HOST'),
+            'port': int(os.getenv('PG_PORT')),
+            'database': os.getenv('PG_DB'),
+            'user': os.getenv('PG_USER'),
+            'password': os.getenv('PG_PASSWORD')
         }
         self.connection = None
         self.cursor = None
