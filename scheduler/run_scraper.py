@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 # MongoDB setup
 collection = client["chat-bot"]
-pinecone_indexes_coll = collection["Configuration"]
+indexes_coll = collection["Configuration"]
 
 
 async def process_pending_configurations():
@@ -35,10 +35,11 @@ async def process_pending_configurations():
         logger.info("🔍 Checking for pending configurations to process...")
         
         # Find documents that have index_name, url, and processed=False
-        pending_configs = pinecone_indexes_coll.find({
+        pending_configs = indexes_coll.find({
             "index_name": {"$exists": True, "$ne": None},
             "root_url": {"$exists": True, "$ne": None},
-            "processed": False
+            "processed": False,
+            "progress": "pending"
         })
         
         # Convert cursor to list
@@ -62,7 +63,14 @@ async def process_pending_configurations():
                 logger.info(f"   Index: {index_name}")
                 logger.info(f"   Root URL: {root_url}")
         
-                
+                indexes_coll.update_one(
+                        {"_id": config_id},
+                        {
+                            "$set": {
+                                "progress": "processing",
+                            }
+                        }
+                    )
                 # Call the setup function
                 result = await setup_user_agent_and_scrape(
                     user_id=user_id,
@@ -75,14 +83,15 @@ async def process_pending_configurations():
                     logger.info(f"✅ Successfully processed configuration for user: {user_id}")
                     
                     # Update MongoDB - mark as processed
-                    pinecone_indexes_coll.update_one(
+                    indexes_coll.update_one(
                         {"_id": config_id},
                         {
                             "$set": {
                                 "processed": True,
                                 "processing_completed_at": datetime.utcnow(),
                                 "status": "completed",
-                                "last_result": result
+                                "last_result": result,
+                                "progress": "completed"
                             }
                         }
                     )
@@ -91,13 +100,14 @@ async def process_pending_configurations():
                     logger.error(f"   Error: {result.get('error', 'Unknown error')}")
                     
                     # Update MongoDB - mark as failed but keep processed=False for retry
-                    pinecone_indexes_coll.update_one(
+                    indexes_coll.update_one(
                         {"_id": config_id},
                         {
                             "$set": {
                                 "processing_completed_at": datetime.utcnow(),
                                 "status": "failed",
-                                "last_error": result.get("error", "Unknown error")
+                                "last_error": result.get("error", "Unknown error"),
+                                "progress": "failed"
                             }
                         }
                     )
@@ -107,13 +117,14 @@ async def process_pending_configurations():
                 
                 # Update MongoDB - mark as failed
                 try:
-                    pinecone_indexes_coll.update_one(
+                    indexes_coll.update_one(
                         {"_id": config_id},
                         {
                             "$set": {
                                 "processing_completed_at": datetime.utcnow(),
                                 "status": "failed",
-                                "last_error": str(e)
+                                "last_error": str(e),
+                                "progress": "failed"
                             }
                         }
                     )

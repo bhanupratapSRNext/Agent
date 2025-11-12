@@ -225,7 +225,8 @@ async def save_url(request: SaveURLRequest):
             update_data = {
                 "root_url": request.root_url,
                 "updated_at": datetime.utcnow(),
-                "status": "updated"
+                "status": "updated",
+                "progress": "pending"
             }
             
             configuration_coll.update_one(
