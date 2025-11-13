@@ -131,9 +131,6 @@ async def create_index(request: CreateIndexRequest):
                 detail=f"Invalid metric. Must be one of: {', '.join(valid_metrics)}"
             )
         
-        # Import MongoDB client
-        
-        
         # MongoDB setup
         collection = client["chat-bot"]
         pinecone_indexes_coll = collection["Configuration"]
@@ -156,7 +153,7 @@ async def create_index(request: CreateIndexRequest):
         
         return CreateIndexResponse(
             success=True,
-            message=f"Index '{request.index_name}' successfully saved to MongoDB",
+            message=f"Index '{request.index_name}' successfully saved",
             index_name=request.index_name,
             details={
                 "dimension": request.dimension,

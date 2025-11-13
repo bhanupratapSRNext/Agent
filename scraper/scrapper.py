@@ -123,7 +123,7 @@ async def full_scrape(request: FullScrapeRequest):
                     urls_and_html = []
                     
                     for i, page_url in enumerate(pages_to_scrape, 1):
-                        # if i > 3:  # Limit for testing
+                        # if i > 4:  # Limit for testing
                         #     break
                             
                         try:
@@ -153,7 +153,7 @@ async def full_scrape(request: FullScrapeRequest):
                         logger.info(f"🧪 Bedrock test extracted: {len(bedrock_products)} products")
                         
                         # Save extracted products to PostgreSQL database
-                        db_save_result = await save_bedrock_products_to_db(bedrock_products)
+                        db_save_result = await save_bedrock_products_to_db(bedrock_products,tenant_id=domain)
                         logger.info(f"💾 Database save result: {db_save_result['message']}")
                     
                 except Exception as e:

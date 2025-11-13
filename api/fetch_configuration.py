@@ -27,7 +27,7 @@ class FetchConfigResponse(BaseModel):
     error: Optional[str] = None
 
 
-@router.get("/fdetail", response_model=FetchConfigResponse)
+@router.get("/detail", response_model=FetchConfigResponse)
 async def fetch_configuration(request: Request, user_id: Optional[str] = None):
     """
     Fetch configuration from MongoDB based on user_id with filters:

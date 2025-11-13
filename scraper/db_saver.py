@@ -56,36 +56,39 @@ class ProductDBSaver:
         """Create products table if it doesn't exist."""
         create_table_query = """
         CREATE TABLE IF NOT EXISTS products (
+            tenant_id TEXT NOT NULL,
             id SERIAL PRIMARY KEY,
             source_url TEXT,
-            scraped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            product_data JSONB,
+            product_url TEXT,
             title TEXT,
             price TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            product_color TEXT,
+            product_size TEXT,
+            description TEXT,
+            product_json JSONB
         );
         
+        CREATE INDEX IF NOT EXISTS idx_products_tenant_id ON products(tenant_id);
         CREATE INDEX IF NOT EXISTS idx_products_source_url ON products(source_url);
-        CREATE INDEX IF NOT EXISTS idx_products_scraped_at ON products(scraped_at);
         CREATE INDEX IF NOT EXISTS idx_products_title ON products(title);
         """
         
         try:
             self.cursor.execute(create_table_query)
             self.connection.commit()
-            logger.info("✓ Table 'products' is ready")
             return True
         except Exception as e:
             logger.error(f"❌ Failed to create table: {e}")
             self.connection.rollback()
             return False
     
-    def save_products(self, products: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def save_products(self, products: List[Dict[str, Any]], tenant_id: str = None) -> Dict[str, Any]:
         """
         Save products to database.
         
         Args:
             products: List of product dictionaries
+            tenant_id: Optional tenant ID to use if not present in product data
             
         Returns:
             Dictionary with save statistics
@@ -120,8 +123,8 @@ class ProductDBSaver:
         
         # Prepare insert query
         insert_query = """
-        INSERT INTO products (source_url, product_data, title, price, scraped_at)
-        VALUES (%s, %s, %s, %s, %s)
+        INSERT INTO products (tenant_id, source_url, product_url, title, price, product_color, product_size, description, product_json)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         
         saved_count = 0
@@ -132,19 +135,29 @@ class ProductDBSaver:
             data_to_insert = []
             for product in products:
                 try:
-                    source_url = product.get('source_url', '')
-                    title = product.get('title', product.get('name', ''))
-                    price = product.get('price', product.get('regular_price', ''))
+                    # Extract values with None as default to allow NULL in database
+                    product_tenant_id = tenant_id
+                    source_url = product.get('source_url')
+                    product_url = product.get('image')
+                    title = product.get('title', product.get('name'))
+                    price = product.get('price', product.get('regular_price'))
+                    product_color = product.get('product_color', product.get('color'))
+                    product_size = product.get('product_size', product.get('size'))
+                    description = product.get('description')
                     
                     # Store entire product as JSONB
-                    product_json = json.dumps(product)
+                    product_json = json.dumps(product) if product else None
                     
                     data_to_insert.append((
+                        product_tenant_id,
                         source_url,
-                        product_json,
+                        product_url,
                         title,
                         price,
-                        datetime.now()
+                        product_color,
+                        product_size,
+                        description,
+                        product_json
                     ))
                 except Exception as e:
                     logger.error(f"❌ Failed to prepare product for insert: {e}")
@@ -172,12 +185,13 @@ class ProductDBSaver:
         }
 
 
-async def save_bedrock_products_to_db(products: List[Dict[str, Any]]) -> Dict[str, Any]:
+async def save_bedrock_products_to_db(products: List[Dict[str, Any]], tenant_id: str = None) -> Dict[str, Any]:
     """
     Async wrapper to save Bedrock extracted products to PostgreSQL.
     
     Args:
         products: List of product dictionaries from Bedrock extraction
+        tenant_id: Optional tenant ID to use if not present in product data
         
     Returns:
         Dictionary with save statistics
@@ -185,7 +199,7 @@ async def save_bedrock_products_to_db(products: List[Dict[str, Any]]) -> Dict[st
     logger.info(f"\n💾 Saving {len(products)} products to PostgreSQL database...")
     
     saver = ProductDBSaver()
-    result = saver.save_products(products)
+    result = saver.save_products(products, tenant_id)
     
     if result['success']:
         logger.info(f"✅ Database save complete: {result['message']}")

@@ -132,7 +132,7 @@ async def setup_user_agent_and_scrape(
         }
         
         # Make async HTTP request to scraper API
-        async with httpx.AsyncClient(timeout=300.0) as http_client:  # 5 min timeout
+        async with httpx.AsyncClient(timeout=None) as http_client:
             scrape_response = await http_client.post(scraper_url, json=scrape_payload)
             
             if scrape_response.status_code != 200:
