@@ -123,8 +123,8 @@ async def full_scrape(request: FullScrapeRequest):
                     urls_and_html = []
                     
                     for i, page_url in enumerate(pages_to_scrape, 1):
-                        if i > 4:  # Limit for testing
-                            break
+                        # if i > 4:  # Limit for testing
+                        #     break
                             
                         try:
                             scrape_stats['pages_attempted'] += 1
