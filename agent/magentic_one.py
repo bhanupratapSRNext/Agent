@@ -13,25 +13,11 @@ from autogen_agentchat.messages import TextMessage
 # Direct OpenAI import for simple LLM calls
 from openai import AsyncOpenAI
 
-# from tools.vector_pinecone import VectorRetriever
+from tools.vector_pinecone import VectorRetriever
 from tools.sql_postgres import SQLTool
 
 import json
 import re
-
-# Fast keyword checker for obvious smalltalk (avoids LLM call)
-SMALLTALK_KEYWORDS = [
-    'hello', 'hi', 'hey', 'greetings', 'good morning', 'good afternoon',
-    'good evening', 'how are you', "how's it going", "what's up",
-    'thanks', 'thank you', 'bye', 'goodbye', 'see you',
-    'who are you', 'what are you', 'what can you do', 'help me',
-    'nice to meet you', 'pleased to meet you', 'howdy', 'hiya'
-]
-
-def is_obvious_smalltalk(query: str) -> bool:
-    """Fast check for obvious smalltalk to skip LLM planning"""
-    query_lower = query.lower().strip()
-    return any(keyword in query_lower for keyword in SMALLTALK_KEYWORDS)
 
 class MagenticAgent:
     """Magentic-One implementation"""
@@ -40,14 +26,14 @@ class MagenticAgent:
         self.api_key = api_key
         self.max_turns = max_turns
         self.model = model
-        self.base_url = os.getenv("BASE_URL", "https://openrouter.ai/api/v1")
+        self.base_url = os.getenv("BASE_URL")
         
         # Initialize memory (RollingMemory passed from EcommerceAgent)
         # This now handles both conversation history AND response caching
         self.memory = memory
         
         # Initialize tools
-        # self.vector_tool = VectorRetriever()
+        self.vector_tool = VectorRetriever()
         self.sql_tool = SQLTool()
         
         # Initialize LLM clients
@@ -117,94 +103,19 @@ class MagenticAgent:
         # Format conversation history
         history_text = ""
         if conversation_history:
-            recent = conversation_history[-6:]  # Last 3 exchanges
+            recent = conversation_history[-8:]  # Last 8 exchanges
             history_text = "\n".join([
                 f"{'User' if i % 2 == 0 else 'Assistant'}: {msg}"
                 for i, msg in enumerate(recent)
             ])
-        
-        system_prompt = """You are a Master Query Planner for an e-commerce AI assistant. Your job is to analyze user queries and create optimal execution plans.
 
-**Available Resources:**
-1. **SQL Database**: Specific product data (sales, prices, inventory, product details, orders, revenue)
-2. **RAG Knowledge Base**: General e-commerce knowledge (market trends, strategies, reports, best practices)
-3. **Direct Response**: For greetings and simple conversation
-
-**Your Task:**
-Analyze the user's query (with conversation history if provided) and respond with a JSON object:
-
-```json
-{
-  "route": "<route_type>",
-  "enriched_query": "<enriched_query>",
-  "sql_task": "<sql_task or null>",
-  "rag_task": "<rag_task or null>"
-}
-```
-
-**Route Types:**
-
-1. **"smalltalk"** - Greetings, thanks, casual chat
-   - enriched_query: same as original
-   - sql_task: null, rag_task: null
-
-2. **"sql"** - Needs specific product/sales/inventory data from database
-   - enriched_query: refined query with context from history
-   - sql_task: null, rag_task: null
-   - Examples: "What are our top products?", "Show me sales for SKU 123", "Which products are low in stock?"
-
-3. **"rag"** - Needs general e-commerce knowledge/trends/strategies
-   - enriched_query: refined query with context
-   - sql_task: null, rag_task: null
-   - Examples: "What are current e-commerce trends?", "Best practices for conversion?", "How to optimize checkout?"
-
-4. **"parallel"** - Needs BOTH independent SQL data AND RAG knowledge (can run simultaneously)
-   - enriched_query: complete refined query
-   - sql_task: specific question for SQL database
-   - rag_task: specific question for RAG knowledge base
-   - Example: "Compare our top product's sales with market trends" → sql_task: "What is our top-selling product and its sales?", rag_task: "What are the current market trends?"
-
-5. **"sequential"** - Complex query where tasks depend on each other (needs orchestration)
-   - enriched_query: complete refined query
-   - sql_task: null, rag_task: null
-   - Example: "Find products with declining sales and suggest strategies" (need SQL results first to know which products, then RAG for strategies)
-
-**Enrichment Rules:**
-- If conversation history exists, add relevant context to enriched_query
-- If user says "it", "that", "them", resolve the reference from history
-- If query is vague (like "revenue" or "t-shirt"), add specificity from previous context
-- If query is already complete, enriched_query = original query
-
-**Examples:**
-
-Input: "Hello!"
-Output: {"route": "smalltalk", "enriched_query": "Hello!", "sql_task": null, "rag_task": null}
-
-Input: "What are our best-selling products?"
-Output: {"route": "sql", "enriched_query": "What are our best-selling products?", "sql_task": null, "rag_task": null}
-
-Input: "What are the latest e-commerce trends?"
-Output: {"route": "rag", "enriched_query": "What are the latest e-commerce trends?", "sql_task": null, "rag_task": null}
-
-Input: "Compare our top t-shirt sales with sustainable fashion trends"
-Output: {"route": "parallel", "enriched_query": "Compare our top t-shirt sales with sustainable fashion trends", "sql_task": "What is our top-selling t-shirt and what are its sales figures?", "rag_task": "What are the current trends in sustainable fashion?"}
-
-History: "User: Show me product SKU 12345\nAssistant: [product details]"
-Input: "What about its sales?"
-Output: {"route": "sql", "enriched_query": "What are the sales figures for product SKU 12345?", "sql_task": null, "rag_task": null}
-
-History: "User: Show me menswear products\nAssistant: [list of menswear]"
-Input: "t-shirt"
-Output: {"route": "sql", "enriched_query": "Show me t-shirt products from menswear category", "sql_task": null, "rag_task": null}
-
-**Critical:** Output ONLY valid JSON. No explanations, no markdown blocks, just the JSON object."""
+        from prompts.master_planner import MASTER_PLANNER_SYSTEM_PROMPT
+        system_prompt = MASTER_PLANNER_SYSTEM_PROMPT
 
         user_message = f"""Conversation History:
-{history_text if history_text else "No previous conversation"}
-
-Current Query: {user_query}
-
-Create execution plan:"""
+            {history_text if history_text else "No previous conversation"}
+            Current Query: {user_query}
+            Create execution plan:"""
 
         try:
             response = await self.openai_client.chat.completions.create(
@@ -370,9 +281,7 @@ Do not cite sources or mention technical details. Just be conversational."""
             system_msg = (
             "You are a helpful, concise assistant for an e-commerce analytics product.\n"
             "You MUST first infer the user's intent:\n"
-            "• If the message is smalltalk (greetings, pleasantries, jokes, about-you), "
-            "  respond naturally . Do NOT cite documents or domain facts.\n"
-            "• Otherwise, answer the user's question. Use the provided Context ONLY if it is relevant. "
+            "• answer the user's question. Use the provided Context ONLY if it is relevant. "
             "  If context is missing or insufficient, say so briefly and suggest one clarifying detail. "
             "  Never fabricate numbers or claims.\n"
             "Style: warm, direct, no fluff. Prefer bullet points only when helpful."
@@ -493,39 +402,33 @@ Synthesize these into a single, coherent answer that addresses the original quer
                     'cached': True
                 }
 
-        # Check for obvious smalltalk (skip LLM planning)
-        if is_obvious_smalltalk(user_query):
-            response = await self._execute_smalltalk(user_query)
-            route_type = 'smalltalk'
-        else:
-            # Master Planner: Single LLM call for routing + enrichment + planning
-            conversation_history = self.get_memory(session_id) if self.memory else []
-            plan = await self._plan_execution(user_query, conversation_history)
-            
-            route_type = plan['route']
-            enriched_query = plan['enriched_query']
-            
-            print(f"🎯 Route: {route_type}")
-            if enriched_query != user_query:
-                print(f"📝 Enriched: '{user_query}' → '{enriched_query[:80]}...'")
-            
-            # Execute based on the plan
-            if route_type == 'smalltalk':
-                response = await self._execute_smalltalk(user_query)
-            elif route_type == 'sql':
-                response = await self._execute_sql(enriched_query)
-            elif route_type == 'rag':
-                response = await self._execute_rag(enriched_query)
-            elif route_type == 'parallel':
-                # Execute SQL and RAG in parallel, then synthesize
-                response = await self._execute_parallel(
-                    enriched_query,
-                    plan['sql_task'],
-                    plan['rag_task']
-                )
-            else:  # sequential
-                # Complex orchestration with dependencies
-                response = await self._execute_sequential(enriched_query)
+        conversation_history = self.get_memory(session_id) if self.memory else []
+        plan = await self._plan_execution(user_query, conversation_history)
+        
+        route_type = plan['route']
+        enriched_query = plan['enriched_query']
+        
+        print(f"🎯 Route: {route_type}")
+        if enriched_query != user_query:
+            print(f"📝 Enriched: '{user_query}' → '{enriched_query[:80]}...'")
+        
+        # Execute based on the plan
+        if route_type == 'smalltalk':
+            response = plan['reply']
+        elif route_type == 'sql':
+            response = await self._execute_sql(enriched_query)
+        elif route_type == 'rag':
+            response = await self._execute_rag(enriched_query)
+        elif route_type == 'parallel':
+            # Execute SQL and RAG in parallel, then synthesize
+            response = await self._execute_parallel(
+                enriched_query,
+                plan['sql_task'],
+                plan['rag_task']
+            )
+        else:  # sequential
+            # Complex orchestration with dependencies
+            response = await self._execute_sequential(enriched_query)
         
         execution_time = (time.time() - start_time) * 1000
         
