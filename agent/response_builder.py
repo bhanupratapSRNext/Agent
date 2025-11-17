@@ -174,54 +174,34 @@ class ResponseBuilder:
         # Ensure raw_response is a string
         if not isinstance(raw_response, str):
             raw_response = str(raw_response)
-        system_prompt = """You are a data formatter specialist. Your job is to extract product information from raw data and convert it into clean, structured JSON format.
+        system_prompt = """You are a Data Formatter Specialist AI. Your primary role is to intelligently extract product details from raw, unstructured data and format them into a clean, structured JSON format ready for downstream processing.
 
-**Your Task:**
-1. Analyze the raw response and identify all product details
-2. Extract structured information for each product
-3. Return ONLY a valid JSON object (no markdown, no explanations)
+Your Mission:
+Carefully analyze the raw input, identifying and extracting every product listed.
+Format each product into a clean and consistent JSON object using the schema below.
+Return a single, fully-formed JSON object only—no text, no comments, no markdown.
 
-**JSON Structure to use:**
-```json
+*Expected JSON Structure:
+
 {
-  "summary": "Brief summary of the data (1-2 sentences)",
+  "summary": "An interactive message to the user summarizing the results.",
   "total_count": <number of products>,
   "products": [
     {
       "product_id": "...",
       "product_name": "...",
-      "sku": "...",
       "price": <number>,
-      "quantity": <number>,
-      "sales": <number>,
-      "revenue": <number>,
       "category": "...",
       "region": "...",
-      "rank": <number>,
-      "...": "... (any other relevant fields)"
+      "...": "any other relevant fields extracted from the raw data"
     }
   ],
   "metadata": {
-    "data_source": "database|report|combined",
-    "query_type": "top_products|sales_data|inventory|recommendations"
+    "data_source": "database | report | combined",
+    "query_type": "top_products | sales_data | inventory | recommendations"
   }
 }
-```
-
-**Important Rules:**
-1. Include ALL products mentioned in the raw data
-2. Use null for missing fields (don't fabricate data)
-3. Preserve exact numbers, names, and values from raw data
-4. Use consistent field names (snake_case)
-5. If raw data has different format (tuples, lists), convert to JSON objects
-6. Keep the summary factual and concise
-7. Output ONLY valid JSON (no code blocks, no markdown)
-
-**Example Input:**
-[(1, 'T-Shirt Blue', 'SKU-001', 29.99, 150), (2, 'Jeans Black', 'SKU-002', 59.99, 80)]
-
-**Example Output:**
-{"summary": "Top 2 products by sales.", "total_count": 2, "products": [{"rank": 1, "product_name": "T-Shirt Blue", "sku": "SKU-001", "price": 29.99, "quantity_sold": 150}, {"rank": 2, "product_name": "Jeans Black", "sku": "SKU-002", "price": 59.99, "quantity_sold": 80}], "metadata": {"data_source": "database", "query_type": "top_products"}}"""
+"""
 
         user_prompt = f"""USER QUESTION:
 {user_query}
@@ -344,37 +324,75 @@ Extract and format this as JSON following the structure specified. Output only t
     def _get_system_prompt(self, route: str) -> str:
         """Get route-specific system prompt"""
         
-        base_instructions = """You are a professional e-commerce assistant. Your job is to take raw data or information and present it clearly to users.
+#         base_instructions = """You are a professional e-commerce assistant. Your job is to take raw data or information and present it clearly to users.
 
-CRITICAL RULES:
-- NEVER fabricate data, numbers, or facts not present in the raw response
-- If raw data is empty/missing, acknowledge it politely
-- Be concise but complete
-- Use natural, conversational language
-- Format lists and data for easy scanning"""
+# CRITICAL RULES:
+# - NEVER fabricate data, numbers, or facts not present in the raw response
+# - If raw data is empty/missing, acknowledge it politely
+# - Be concise but complete
+# - Use natural, conversational language
+# - Format lists and data for easy scanning"""
+
+#         route_specific = {
+#             'sql': """
+# The raw response contains database query results with product data.
+# - Present numbers and metrics clearly
+# - Use bullet points for multiple items
+# - Highlight key findings
+# - Add brief context when helpful""",
+            
+#             'rag': """
+# The raw response contains information from e-commerce documents/reports.
+# - Synthesize information naturally
+# - Cite insights without being verbose
+# - Use paragraphs for concepts, bullets for lists
+# - Add "According to..." or "Based on..." when appropriate""",
+            
+#             'orchestrator': """
+# The raw response combines multiple data sources (database + documents).
+# - Integrate both types of information seamlessly
+# - Present a cohesive answer
+# - Use sections if combining distinct insights
+# - Make connections between data and context clear"""
+#         }
+# Updated system prompt (replace your existing strings with these)
+        base_instructions = """You are a professional, friendly e-commerce assistant that converts raw product data into clear, helpful responses.
+
+CRITICAL RULES (must follow):
+- NEVER fabricate data, numbers, or facts not present in the raw response.
+- If raw data is empty/missing, acknowledge it politely and offer next steps.
+- Be concise but complete.
+- Use natural, conversational language (warm, helpful, not robotic).
+- Format lists and data for easy scanning (bullets, short lines, headings).
+- Always include a short, proactive call-to-action (CTA) or follow-up question to keep the user engaged.
+- Offer one brief alternative / suggestion where relevant (without inventing facts).
+- If user appears to have given a specific choice in their request, echo that choice before offering alternatives."""
 
         route_specific = {
-            'sql': """
-The raw response contains database query results with sales/product data.
-- Present numbers and metrics clearly
-- Use bullet points for multiple items
-- Highlight key findings
-- Add brief context when helpful (e.g., "Based on sales data...")""",
-            
-            'rag': """
+    'sql': """
+The raw response contains database query results with product data.
+- Present numbers and metrics clearly (table-like bullets).
+- Use bullet points for multiple items and bold key attributes (price, stock, rating).
+- Start with a one-line friendly summary (1 sentence).
+- End with a CTA: ask if they want to sort/filter/see details.
+- If relevant, provide one alternative suggestion (e.g., "If you'd like lower price, try: ...") but do not invent products.""",
+
+    'rag': """
 The raw response contains information from e-commerce documents/reports.
-- Synthesize information naturally
-- Cite insights without being verbose
-- Use paragraphs for concepts, bullets for lists
-- Add "According to..." or "Based on..." when appropriate""",
-            
-            'orchestrator': """
+- Synthesize information naturally and concisely.
+- Use paragraphs for short explanation and bullets for actionable lists.
+- Preface data-driven claims with "According to..." or "Based on..." when appropriate.
+- Add a short follow-up prompt: "Would you like me to...?"
+- Suggest one alternative phrasing or next action the user can take.""",
+
+    'orchestrator': """
 The raw response combines multiple data sources (database + documents).
-- Integrate both types of information seamlessly
-- Present a cohesive answer
-- Use sections if combining distinct insights
-- Make connections between data and context clear"""
-        }
+- Integrate both types of information seamlessly into sections.
+- Use a concise header, a short summary sentence, then bullets for products or insights.
+- Link facts to their source when useful (e.g., 'based on inventory data').
+- Finish with a friendly question to guide the next step (e.g., "Want me to add these to cart?")."""
+}
+
         
         return base_instructions + "\n" + route_specific.get(route, route_specific['rag'])
     
