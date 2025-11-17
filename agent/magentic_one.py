@@ -13,7 +13,7 @@ from autogen_agentchat.messages import TextMessage
 # Direct OpenAI import for simple LLM calls
 from openai import AsyncOpenAI
 
-# from tools.vector_pinecone import VectorRetriever
+from tools.vector_pinecone import VectorRetriever
 from tools.sql_postgres import SQLTool
 
 import json
@@ -33,7 +33,7 @@ class MagenticAgent:
         self.memory = memory
         
         # Initialize tools
-        # self.vector_tool = VectorRetriever()
+        self.vector_tool = VectorRetriever()
         self.sql_tool = SQLTool()
         
         # Initialize LLM clients
@@ -207,39 +207,39 @@ class MagenticAgent:
             termination_condition=TextMentionTermination("TERMINATE")
         )
     
-    async def _execute_smalltalk(self, query: str) -> str:
-        """Execute small talk - direct, fast response without tools"""
-        try:
-            system_msg = """You are a friendly e-commerce assistant.
+#     async def _execute_smalltalk(self, query: str) -> str:
+#         """Execute small talk - direct, fast response without tools"""
+#         try:
+#             system_msg = """You are a friendly e-commerce assistant.
 
-Respond naturally to greetings and casual conversation.
-Keep responses brief (1-2 sentences maximum).
-Be warm but professional.
+# Respond naturally to greetings and casual conversation.
+# Keep responses brief (1-2 sentences maximum).
+# Be warm but professional.
 
-If asked what you can do, mention:
-- Answer questions about e-commerce trends and strategies
-- Analyze sales data and product performance
-- Provide insights from e-commerce reports
-- Help with data-driven recommendations
+# If asked what you can do, mention:
+# - Answer questions about e-commerce trends and strategies
+# - Analyze sales data and product performance
+# - Provide insights from e-commerce reports
+# - Help with data-driven recommendations
 
-Do not cite sources or mention technical details. Just be conversational."""
+# Do not cite sources or mention technical details. Just be conversational."""
             
-            # Direct LLM call - no tools, no context retrieval, no orchestration
-            response = await self.openai_client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": system_msg},
-                    {"role": "user", "content": query}
-                ],
-                max_tokens=100,  # Keep it short for greetings
-                temperature=0.7  # More natural for conversation
-            )
-            return response.choices[0].message.content.strip()
+#             # Direct LLM call - no tools, no context retrieval, no orchestration
+#             response = await self.openai_client.chat.completions.create(
+#                 model=self.model,
+#                 messages=[
+#                     {"role": "system", "content": system_msg},
+#                     {"role": "user", "content": query}
+#                 ],
+#                 max_tokens=100,  # Keep it short for greetings
+#                 temperature=0.7  # More natural for conversation
+#             )
+#             return response.choices[0].message.content.strip()
             
-        except Exception as e:
-            print(f"❌ Small talk error: {e}")
-            # Friendly fallback
-            return "Hello! I'm here to help you with e-commerce insights and data analysis. What can I help you with today?"
+#         except Exception as e:
+#             print(f"❌ Small talk error: {e}")
+#             # Friendly fallback
+#             return "Hello! I'm here to help you with e-commerce insights and data analysis. What can I help you with today?"
     
     async def _execute_sql(self, query: str) -> str:
         """Execute SQL query (needs LLM to generate SQL)"""
@@ -416,7 +416,8 @@ Synthesize these into a single, coherent answer that addresses the original quer
         if route_type == 'smalltalk':
             response = plan['reply']
         elif route_type == 'sql':
-            response = await self._execute_sql(enriched_query)
+            final_query = f"{enriched_query} select all columns"
+            response = await self._execute_sql(final_query)
         elif route_type == 'rag':
             response = await self._execute_rag(enriched_query)
         elif route_type == 'parallel':
