@@ -1,16 +1,12 @@
 import os
-import uuid
 import logging
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-# Suppress watchfiles INFO logs
 logging.getLogger('watchfiles').setLevel(logging.WARNING)
 
 from agent.memory import RollingMemory
-# from tools.vector_pinecone import VectorRetriever
-from tools.sql_postgres import SQLTool
 
 # Import ACP configuration
 from acp_config import ACPConfig
@@ -44,8 +40,6 @@ app.add_middleware(
 
 # Initialize your business logic components (kept for backward compatibility)
 memory = RollingMemory(window_size=ACPConfig.MEMORY_WINDOW)
-# retriever = VectorRetriever()
-sql_tool = SQLTool()
 
 # Initialize the Magentic-One agent with memory for context-aware validation
 ecommerce_agent = EcommerceAgent(memory=memory)
@@ -59,7 +53,6 @@ setup_routes(app, ecommerce_agent, memory)
 @app.on_event("startup")
 async def startup_event():
     """Initialize scheduler on application startup"""
-    logging.info("Starting application and scheduler...")
     start_scheduler()
     logging.info("Scheduler started successfully")
 
@@ -67,7 +60,6 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     """Shutdown scheduler gracefully on application exit"""
-    logging.info("Shutting down application and scheduler...")
     stop_scheduler()
     logging.info("Scheduler stopped successfully")
 

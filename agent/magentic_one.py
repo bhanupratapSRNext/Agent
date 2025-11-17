@@ -206,41 +206,8 @@ class MagenticAgent:
             max_turns=self.max_turns,
             termination_condition=TextMentionTermination("TERMINATE")
         )
-    
-#     async def _execute_smalltalk(self, query: str) -> str:
-#         """Execute small talk - direct, fast response without tools"""
-#         try:
-#             system_msg = """You are a friendly e-commerce assistant.
-
-# Respond naturally to greetings and casual conversation.
-# Keep responses brief (1-2 sentences maximum).
-# Be warm but professional.
-
-# If asked what you can do, mention:
-# - Answer questions about e-commerce trends and strategies
-# - Analyze sales data and product performance
-# - Provide insights from e-commerce reports
-# - Help with data-driven recommendations
-
-# Do not cite sources or mention technical details. Just be conversational."""
-            
-#             # Direct LLM call - no tools, no context retrieval, no orchestration
-#             response = await self.openai_client.chat.completions.create(
-#                 model=self.model,
-#                 messages=[
-#                     {"role": "system", "content": system_msg},
-#                     {"role": "user", "content": query}
-#                 ],
-#                 max_tokens=100,  # Keep it short for greetings
-#                 temperature=0.7  # More natural for conversation
-#             )
-#             return response.choices[0].message.content.strip()
-            
-#         except Exception as e:
-#             print(f"❌ Small talk error: {e}")
-#             # Friendly fallback
-#             return "Hello! I'm here to help you with e-commerce insights and data analysis. What can I help you with today?"
-    
+   
+   
     async def _execute_sql(self, query: str) -> str:
         """Execute SQL query (needs LLM to generate SQL)"""
         try:
@@ -269,7 +236,7 @@ class MagenticAgent:
         """Execute RAG search"""
         try:
             # Search vector database
-            docs = self.vector_tool.retrieve(query, k=3)
+            docs = self.vector_tool.retrieve(query, k=5)
             
             if not docs:
                 return "I couldn't find specific information about that in our database."
@@ -277,27 +244,28 @@ class MagenticAgent:
             # Prepare context from retrieved documents
             context = "\n\n".join([doc["text"] for doc in docs])
             
+            return context
             # Generate response using LLM
-            system_msg = (
-            "You are a helpful, concise assistant for an e-commerce analytics product.\n"
-            "You MUST first infer the user's intent:\n"
-            "• answer the user's question. Use the provided Context ONLY if it is relevant. "
-            "  If context is missing or insufficient, say so briefly and suggest one clarifying detail. "
-            "  Never fabricate numbers or claims.\n"
-            "Style: warm, direct, no fluff. Prefer bullet points only when helpful."
-        )
+        #     system_msg = (
+        #     "You are a helpful, concise assistant for an e-commerce analytics product.\n"
+        #     "You MUST first infer the user's intent:\n"
+        #     "• answer the user's question. Use the provided Context ONLY if it is relevant. "
+        #     "  If context is missing or insufficient, say so briefly and suggest one clarifying detail. "
+        #     "  Never fabricate numbers or claims.\n"
+        #     "Style: warm, direct, no fluff. Prefer bullet points only when helpful."
+        # )
             
-            prompt = f"""Based on these e-commerce insights, answer the question: {query}
-            Context: {context}
-            Provide a clear, concise answer."""
+        #     prompt = f"""Based on these e-commerce insights, answer the question: {query}
+        #     Context: {context}
+        #     Provide a clear, concise answer."""
             
-            # Use direct OpenAI client for simple calls
-            response = await self.openai_client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "system", "content": system_msg},
-                          {"role": "user", "content": prompt}]
-            )
-            return response.choices[0].message.content
+        #     # Use direct OpenAI client for simple calls
+        #     response = await self.openai_client.chat.completions.create(
+        #         model=self.model,
+        #         messages=[{"role": "system", "content": system_msg},
+        #                   {"role": "user", "content": prompt}]
+        #     )
+        #     return response.choices[0].message.content
             
         except Exception as e:
             print(f"❌ RAG execution error: {e}")
@@ -308,7 +276,6 @@ class MagenticAgent:
         Execute SQL and RAG tasks in parallel and synthesize results.
         This is faster than sequential execution for independent tasks.
         """
-        print("🚀 Executing in parallel mode")
         try:
             import asyncio
             
@@ -326,28 +293,28 @@ class MagenticAgent:
                 rag_result = f"RAG Error: {str(rag_result)}"
             
             # Synthesize the results using LLM
-            system_prompt = """You are a result synthesizer. Combine data from SQL and RAG sources into a clear, natural answer."""
+#             system_prompt = """You are a result synthesizer. Combine data from SQL and RAG sources into a clear, natural answer."""
             
-            synthesis_prompt = f"""Original Query: "{query}"
+#             synthesis_prompt = f"""Original Query: "{query}"
 
-SQL Database Result:
-{sql_result}
+# SQL Database Result:
+# {sql_result}
 
-RAG Knowledge Base Result:
-{rag_result}
+# RAG Knowledge Base Result:
+# {rag_result}
 
-Synthesize these into a single, coherent answer that addresses the original query."""
+# Synthesize these into a single, coherent answer that addresses the original query."""
 
-            response = await self.openai_client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": synthesis_prompt}
-                ],
-                temperature=0.1
-            )
+#             response = await self.openai_client.chat.completions.create(
+#                 model=self.model,
+#                 messages=[
+#                     {"role": "system", "content": system_prompt},
+#                     {"role": "user", "content": synthesis_prompt}
+#                 ],
+#                 temperature=0.1
+#             )
             
-            return response.choices[0].message.content.strip()
+            return sql_result + "\n\n" + rag_result
             
         except Exception as e:
             print(f"❌ Parallel execution failed: {e}. Falling back to sequential mode.")
@@ -416,8 +383,7 @@ Synthesize these into a single, coherent answer that addresses the original quer
         if route_type == 'smalltalk':
             response = plan['reply']
         elif route_type == 'sql':
-            final_query = f"{enriched_query} select all columns"
-            response = await self._execute_sql(final_query)
+            response = await self._execute_sql(enriched_query)
         elif route_type == 'rag':
             response = await self._execute_rag(enriched_query)
         elif route_type == 'parallel':

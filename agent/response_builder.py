@@ -324,74 +324,55 @@ Extract and format this as JSON following the structure specified. Output only t
     def _get_system_prompt(self, route: str) -> str:
         """Get route-specific system prompt"""
         
-#         base_instructions = """You are a professional e-commerce assistant. Your job is to take raw data or information and present it clearly to users.
+        base_instructions = """You are a professional e-commerce assistant. Your job is to take raw data or information and present it clearly to users.
 
-# CRITICAL RULES:
-# - NEVER fabricate data, numbers, or facts not present in the raw response
-# - If raw data is empty/missing, acknowledge it politely
-# - Be concise but complete
-# - Use natural, conversational language
-# - Format lists and data for easy scanning"""
-
-#         route_specific = {
-#             'sql': """
-# The raw response contains database query results with product data.
-# - Present numbers and metrics clearly
-# - Use bullet points for multiple items
-# - Highlight key findings
-# - Add brief context when helpful""",
-            
-#             'rag': """
-# The raw response contains information from e-commerce documents/reports.
-# - Synthesize information naturally
-# - Cite insights without being verbose
-# - Use paragraphs for concepts, bullets for lists
-# - Add "According to..." or "Based on..." when appropriate""",
-            
-#             'orchestrator': """
-# The raw response combines multiple data sources (database + documents).
-# - Integrate both types of information seamlessly
-# - Present a cohesive answer
-# - Use sections if combining distinct insights
-# - Make connections between data and context clear"""
-#         }
-# Updated system prompt (replace your existing strings with these)
-        base_instructions = """You are a professional, friendly e-commerce assistant that converts raw product data into clear, helpful responses.
-
-CRITICAL RULES (must follow):
-- NEVER fabricate data, numbers, or facts not present in the raw response.
-- If raw data is empty/missing, acknowledge it politely and offer next steps.
-- Be concise but complete.
-- Use natural, conversational language (warm, helpful, not robotic).
-- Format lists and data for easy scanning (bullets, short lines, headings).
-- Always include a short, proactive call-to-action (CTA) or follow-up question to keep the user engaged.
-- Offer one brief alternative / suggestion where relevant (without inventing facts).
-- If user appears to have given a specific choice in their request, echo that choice before offering alternatives."""
+CRITICAL RULES:
+- NEVER fabricate data, numbers, or facts not present in the raw response
+- If raw data is empty/missing, acknowledge it politely
+- Be concise but complete
+- Use natural, conversational language
+- Format lists and data for easy scanning"""
 
         route_specific = {
-    'sql': """
+            'sql': """
 The raw response contains database query results with product data.
-- Present numbers and metrics clearly (table-like bullets).
-- Use bullet points for multiple items and bold key attributes (price, stock, rating).
-- Start with a one-line friendly summary (1 sentence).
-- End with a CTA: ask if they want to sort/filter/see details.
-- If relevant, provide one alternative suggestion (e.g., "If you'd like lower price, try: ...") but do not invent products.""",
-
-    'rag': """
+- Present numbers and metrics clearly
+- Use bullet points for multiple items
+- Highlight key findings
+- Add brief context when helpful""",
+            
+            'rag': """
 The raw response contains information from e-commerce documents/reports.
-- Synthesize information naturally and concisely.
-- Use paragraphs for short explanation and bullets for actionable lists.
-- Preface data-driven claims with "According to..." or "Based on..." when appropriate.
-- Add a short follow-up prompt: "Would you like me to...?"
-- Suggest one alternative phrasing or next action the user can take.""",
+- Synthesize information naturally
+- Cite insights without being verbose
 
-    'orchestrator': """
+OUTPUT FORMAT (STRICT REQUIREMENT):
+- You MUST return output ONLY in the following format:
+  1) First line: a heading line in the format:
+     heading: "<your heading text>"
+  2) Then multiple lines, each being a single-element list with ONE string:
+     [ "First insight..." ],
+     [ "Second insight..." ],
+     [ "Third insight..." ]
+
+- Do NOT wrap the whole response in any additional JSON object.
+- Do NOT add any extra text, labels, or markdown before or after this structure.
+- Each string inside the list must be a complete, user-ready insight.
+
+Example of the REQUIRED format:
+heading: "Key Insights from Documents"
+[ "Here is the first key insight for the user based on the documents." ],
+[ "Here is a second insight or recommendation." ],
+[ "Here is another helpful point if more information is available." ]
+""",
+        
+            'orchestrator': """
 The raw response combines multiple data sources (database + documents).
-- Integrate both types of information seamlessly into sections.
-- Use a concise header, a short summary sentence, then bullets for products or insights.
-- Link facts to their source when useful (e.g., 'based on inventory data').
-- Finish with a friendly question to guide the next step (e.g., "Want me to add these to cart?")."""
-}
+- Integrate both types of information seamlessly
+- Present a cohesive answer
+- Use sections if combining distinct insights
+- Make connections between data and context clear"""
+        }
 
         
         return base_instructions + "\n" + route_specific.get(route, route_specific['rag'])
