@@ -2,9 +2,9 @@ import os
 import hashlib
 import logging
 from typing import Dict, Any, Tuple, List, Optional
-
+import random
 from dotenv import load_dotenv
-from soupsieve import match
+# from soupsieve import match
 from sympy import re
 load_dotenv()
 
@@ -25,78 +25,6 @@ def _pg_uri() -> str:
     pwd  = os.getenv("PG_PASSWORD")
     return f"postgresql+psycopg2://{user}:{pwd}@{host}:{port}/{db}"
 
-
-# ============================================================================
-# ORIGINAL IMPLEMENTATION (KEPT AS BACKUP)
-# ============================================================================
-# class SQLTool:
-#     def __init__(self):
-#         # Try OpenRouter first, fallback to OpenAI
-#         api_key = os.getenv("OPEN_ROUTER_KEY")
-#         if not api_key:
-#             raise RuntimeError("Missing OPEN_ROUTER_KEY environment variable")
-#
-#         # Get model from environment or use default
-#         llm_model = os.getenv("OPENROUTER_MODEL")
-#         base_url = os.getenv("BASE_URL")
-#         
-#         self.engine = create_engine(_pg_uri(), pool_pre_ping=True)
-#         self.db = SQLDatabase.from_uri(_pg_uri())
-#         
-#         # Use OpenRouter if OPEN_ROUTER_KEY is set
-#         if os.getenv("OPEN_ROUTER_KEY"):
-#             self.llm = ChatOpenAI(
-#                 api_key=api_key,
-#                 model=llm_model,
-#                 temperature=0,
-#                 base_url=base_url,
-#                 model_kwargs={
-#                     "response_format": {"type": "text"}
-#                 }
-#             )
-#         else:
-#             # Fallback to direct OpenAI
-#             self.llm = ChatOpenAI(api_key=api_key, model=llm_model, temperature=0)
-#
-#         allowlist = os.getenv("SQL_ALLOWED_TABLES", "products")
-#         self.allowed_tables = [t.strip().lower() for t in allowlist.split(",") if t.strip()]
-#
-#     def run(self, question: str) -> Dict[str, Any]:
-#         chain = create_sql_query_chain(self.llm, self.db)
-#         sql = chain.invoke({"question": question}).strip()
-#         
-#         # Simple cleanup for OpenRouter responses
-#         # Remove common prefixes and markdown code blocks
-#         if sql.startswith("SQLQuery:") or sql.startswith("SQL Query:"):
-#             sql = sql.split(":", 1)[1].strip()
-#         
-#         # Remove markdown code blocks
-#         sql = sql.replace("```sql", "").replace("```", "").strip()
-#         
-#         # If multi-line, join lines
-#         if "\n" in sql:
-#             sql = " ".join(line.strip() for line in sql.split("\n") if line.strip())
-#
-#         if self.allowed_tables:
-#             lowered = sql.lower()
-#             for t in self.allowed_tables:
-#                 if f" {t} " in lowered or f" {t}(" in lowered or f" {t}\n" in lowered:
-#                     break
-#             else:
-#                 return {"sql": sql, "rows": [], "note": "Blocked by table allowlist"}
-#
-#         with self.engine.connect() as conn:
-#             try:
-#                 result = conn.execute(text(sql))
-#                 rows = [dict(r._mapping) for r in result]
-#                 return {"sql": sql, "rows": rows}
-#             except Exception as e:
-#                 return {"sql": sql, "rows": [], "error": str(e)}
-
-
-# ============================================================================
-# ENHANCED IMPLEMENTATION WITH AUTOMATIC QUERY HANDLING
-# ============================================================================
 class SQLTool:
     """SQL Tool with automatic query handling capabilities:
     - Schema awareness and validation
@@ -188,6 +116,7 @@ class SQLTool:
         
         return "\n".join(schema_lines)
     
+    
     def _validate_sql(self, sql: str) -> Tuple[bool, str]:
         """
         Validate SQL query for security and correctness
@@ -257,9 +186,9 @@ class SQLTool:
             sql = " ".join(line.strip() for line in sql.split("\n") if line.strip())
         
         return sql
-    
-    
-    def _generate_sql(self, question: str) -> str:
+
+
+    def _generate_sql(self, question: str, tenant_id: str) -> str:
         """
         Generate SQL query from natural language question
         
@@ -280,9 +209,9 @@ class SQLTool:
             Generate a SQL query that:
             1. Only uses columns that exist in the schema above
             2. Uses proper JOINs if multiple tables are needed
-            3. Includes appropriate WHERE conditions
+            3. Includes appropriate WHERE conditions with tenant_id
             4. Uses LIMIT clause to prevent excessive results (default LIMIT 100)
-            5. Returns all relevant columns for the user's question
+            5. Returns all columns for the user's question
             """
         
         # Generate SQL using LangChain
@@ -387,7 +316,7 @@ class SQLTool:
                     "retry_count": retry_count
                 }
     
-    def run(self, question: str) -> Dict[str, Any]:
+    def run(self, question: str,tenant_id: str) -> Dict[str, Any]:
         """
         Execute natural language query against database with automatic handling
         
@@ -406,7 +335,7 @@ class SQLTool:
         try:
             
             # Generate SQL query
-            sql = self._generate_sql(question)
+            sql = self._generate_sql(question, tenant_id)
             
             # Validate SQL query
             is_valid, validation_msg = self._validate_sql(sql)
@@ -417,7 +346,14 @@ class SQLTool:
                     "rows": [],
                     "error": f"Query validation failed: {validation_msg}"
                 }
-            
+
+
+            offset = f"SELECT COUNT(*) FROM products WHERE tenant_id = '{tenant_id}';"
+            with self.engine.connect() as conn:
+                offset_val = conn.execute(text(offset))
+                off=random.randint(0, offset_val.scalar()-10)
+           
+            sql = sql.replace(";", f" OFFSET {off};")
             # Execute query with retry capability
             result = self._execute_with_retry(sql, question)
             

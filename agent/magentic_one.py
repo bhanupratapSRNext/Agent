@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import time
 import os
 from typing import Optional, Dict, Any, List
@@ -174,9 +175,9 @@ class MagenticAgent:
                 return "No relevant documents found."
             return "\n\n".join([f"Document {i+1}:\n{doc['text']}" for i, doc in enumerate(docs)])
         
-        def sql_query(question: str) -> str:
+        def sql_query(question: str, tenant_id: str) -> str:
             """Execute SQL query on database"""
-            result = self.sql_tool.run(question)
+            result = self.sql_tool.run(question, tenant_id)
             if "error" in result:
                 return f"Error: {result['error']}"
             rows = result.get("rows", [])
@@ -208,11 +209,11 @@ class MagenticAgent:
         )
    
    
-    async def _execute_sql(self, query: str) -> str:
+    async def _execute_sql(self, query: str, tenant_id: str) -> str:
         """Execute SQL query (needs LLM to generate SQL)"""
         try:
             # Use the SQL tool's run method which generates and executes SQL
-            result_dict = self.sql_tool.run(query)
+            result_dict = self.sql_tool.run(query,tenant_id)
             
             if "error" in result_dict:
                 return f"Database error: {result_dict['error']}"
@@ -229,7 +230,6 @@ class MagenticAgent:
                 return "No data found for this query."
                 
         except Exception as e:
-            print(f"❌ SQL execution error: {e}")
             return "I encountered an error generating or executing the SQL query."
     
     async def _execute_rag(self, query: str) -> str:
@@ -245,33 +245,11 @@ class MagenticAgent:
             context = "\n\n".join([doc["text"] for doc in docs])
             
             return context
-            # Generate response using LLM
-        #     system_msg = (
-        #     "You are a helpful, concise assistant for an e-commerce analytics product.\n"
-        #     "You MUST first infer the user's intent:\n"
-        #     "• answer the user's question. Use the provided Context ONLY if it is relevant. "
-        #     "  If context is missing or insufficient, say so briefly and suggest one clarifying detail. "
-        #     "  Never fabricate numbers or claims.\n"
-        #     "Style: warm, direct, no fluff. Prefer bullet points only when helpful."
-        # )
-            
-        #     prompt = f"""Based on these e-commerce insights, answer the question: {query}
-        #     Context: {context}
-        #     Provide a clear, concise answer."""
-            
-        #     # Use direct OpenAI client for simple calls
-        #     response = await self.openai_client.chat.completions.create(
-        #         model=self.model,
-        #         messages=[{"role": "system", "content": system_msg},
-        #                   {"role": "user", "content": prompt}]
-        #     )
-        #     return response.choices[0].message.content
             
         except Exception as e:
-            print(f"❌ RAG execution error: {e}")
             return "I encountered an error searching our e-commerce knowledge base."
-    
-    async def _execute_parallel(self, query: str, sql_task: str, rag_task: str) -> str:
+
+    async def _execute_parallel(self, query: str, tenant_id: str, sql_task: str, rag_task: str) -> str:
         """
         Execute SQL and RAG tasks in parallel and synthesize results.
         This is faster than sequential execution for independent tasks.
@@ -292,43 +270,24 @@ class MagenticAgent:
             if isinstance(rag_result, Exception):
                 rag_result = f"RAG Error: {str(rag_result)}"
             
-            # Synthesize the results using LLM
-#             system_prompt = """You are a result synthesizer. Combine data from SQL and RAG sources into a clear, natural answer."""
-            
-#             synthesis_prompt = f"""Original Query: "{query}"
-
-# SQL Database Result:
-# {sql_result}
-
-# RAG Knowledge Base Result:
-# {rag_result}
-
-# Synthesize these into a single, coherent answer that addresses the original query."""
-
-#             response = await self.openai_client.chat.completions.create(
-#                 model=self.model,
-#                 messages=[
-#                     {"role": "system", "content": system_prompt},
-#                     {"role": "user", "content": synthesis_prompt}
-#                 ],
-#                 temperature=0.1
-#             )
-            
             return sql_result + "\n\n" + rag_result
             
         except Exception as e:
-            print(f"❌ Parallel execution failed: {e}. Falling back to sequential mode.")
             return await self._execute_sequential(query)
     
-    async def _execute_sequential(self, query: str) -> str:
+    async def _execute_sequential(self, query: str,tenant_id: str) -> str:
         """
         Execute complex query using the sequential Magentic-One orchestrator.
         Used for queries where tasks are dependent on each other.
         """
-        print("🐌 Executing in sequential orchestrator mode")
+        import logging
+        logging.getLogger("autogen_core").setLevel(logging.WARNING)
+        logging.getLogger("autogen_core.events").setLevel(logging.WARNING)
+        logging.getLogger("autogen_agentchat").setLevel(logging.WARNING)
+   
         try:
             self._init_team()
-            result = await self._team.run(task=query)
+            result = await self._team.run(task=query, tenant_id=tenant_id)
             
             if result and result.messages:
                 return result.messages[-1].content
@@ -336,10 +295,9 @@ class MagenticAgent:
                 return "I couldn't generate a complete response for this complex query."
                 
         except Exception as e:
-            print(f"❌ Sequential execution error: {e}")
             return "I encountered an error processing this complex query."
     
-    async def query(self, user_query: str, session_id: str = "default") -> Dict[str, Any]:
+    async def query(self, user_query: str, tenant_id: str, session_id: str = "default") -> Dict[str, Any]:
         """
         Execute query with ultra-fast routing and validation
         
@@ -383,19 +341,19 @@ class MagenticAgent:
         if route_type == 'smalltalk':
             response = plan['reply']
         elif route_type == 'sql':
-            response = await self._execute_sql(enriched_query)
+            response = await self._execute_sql(enriched_query,tenant_id)
         elif route_type == 'rag':
             response = await self._execute_rag(enriched_query)
         elif route_type == 'parallel':
             # Execute SQL and RAG in parallel, then synthesize
             response = await self._execute_parallel(
-                enriched_query,
+                enriched_query, tenant_id,
                 plan['sql_task'],
                 plan['rag_task']
             )
         else:  # sequential
             # Complex orchestration with dependencies
-            response = await self._execute_sequential(enriched_query)
+            response = await self._execute_sequential(enriched_query,tenant_id)
         
         execution_time = (time.time() - start_time) * 1000
         

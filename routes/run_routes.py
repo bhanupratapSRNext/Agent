@@ -22,6 +22,7 @@ class RunCreateRequest(BaseModel):
     input: List[Message]
     session_id: Optional[str] = None
     mode: Optional[str] = "sync"
+    tenantID: str
 
 # Import the agent (will be injected)
 ecommerce_agent = None

@@ -79,13 +79,14 @@ class EcommerceAgent:
                 raise ValueError("Empty user input provided")
             
             print(f"[Agent] Processing query: '{user_text}' for session: {session_id}")
-            
+
+            tenant_id = request.tenantID
             # Store user query in memory
             if self.memory:
                 self.memory.append(session_id, "user", user_text)
             
             # Use Magentic-One to automatically orchestrate the agents
-            result = await self.magentic_agent.query(user_text, session_id)
+            result = await self.magentic_agent.query(user_text,tenant_id, session_id)
             
             # Extract raw response and metadata
             raw_response = result["response"]
@@ -157,9 +158,6 @@ class EcommerceAgent:
             return response
             
         except Exception as e:
-            # Error handling
-            print(f"[EcommerceAgent] Error: {str(e)}")
-            
             # Build friendly error message
             error_response = await self.response_builder.build_error_response(
                 error_message=str(e),

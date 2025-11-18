@@ -20,6 +20,8 @@ from routes.route_manager import setup_routes
 # Import scheduler functions
 from scheduler.run_scraper import start_scheduler, stop_scheduler
 
+from contextlib import asynccontextmanager
+
 # Load environment variables
 load_dotenv()
 
@@ -49,20 +51,21 @@ ecommerce_agent = EcommerceAgent(memory=memory)
 setup_routes(app, ecommerce_agent, memory)
 
 
-# Application lifecycle events
-@app.on_event("startup")
-async def startup_event():
-    """Initialize scheduler on application startup"""
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Application lifespan context:
+    - Starts the scheduler on startup
+    - Stops the scheduler on shutdown
+    """
     start_scheduler()
     logging.info("Scheduler started successfully")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Shutdown scheduler gracefully on application exit"""
-    stop_scheduler()
-    logging.info("Scheduler stopped successfully")
-
+    try:
+        yield
+    finally:
+        stop_scheduler()
+        logging.info("Scheduler stopped successfully")
 
 # Main service endpoint
 @app.get("/")
