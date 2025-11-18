@@ -43,3 +43,4 @@ Werkzeug
 PyJWT
 httpx
 APScheduler
+beautifulsoup4
