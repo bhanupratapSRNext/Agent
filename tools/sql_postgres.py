@@ -43,6 +43,8 @@ class SQLTool:
         llm_model = os.getenv("OPENROUTER_MODEL")
         base_url = os.getenv("BASE_URL")
         
+        self.limit = int(os.getenv("SQL_QUERY_LIMIT"))
+
         # Database setup
         self.engine = create_engine(_pg_uri(), pool_pre_ping=True)
         self.db = SQLDatabase.from_uri(_pg_uri())
@@ -201,19 +203,42 @@ class SQLTool:
     
         schema_context = self._build_schema_context()
         
-        enhanced_question = f"""Database Schema:
+        enhanced_question = f"""
+            You are an expert PostgreSQL query generator.
+
+            Database Schema:
             {schema_context}
 
-            User Question: {question}
+            User Question:
+            {question}
 
-            Generate a SQL query that:
-            1. Only uses columns that exist in the schema above
-            2. Uses proper JOINs if multiple tables are needed
-            3. Includes appropriate WHERE conditions with tenant_id
-            4. Uses LIMIT clause to prevent excessive results (default LIMIT 100)
-            5. Returns all columns for the user's question
+            CRITICAL RULES:
+            1. Return ONLY a valid PostgreSQL SQL query. No explanation, no comments, no markdown.
+            2. Always include tenant filtering:
+            - For every table that has a `tenant_id` column, add:
+                tenant_id = '{tenant_id}'
+            - This must be in the WHERE clause (or ON condition for joins).
+            3. The final query MUST follow this structure (adapted to the correct table and conditions):
+
+            SELECT
+                p.*,
+                COUNT(*) OVER () AS total_rows
+            FROM <main_table> p
+            WHERE <all filter conditions, including tenant_id and user filters>
+            OFFSET FLOOR(
+                random() * GREATEST(
+                    (SELECT COUNT(*) FROM <main_table> WHERE <same filter conditions>) - {self.limit},
+                    0
+                )
+            )
+            LIMIT {self.limit};
+
+            4. Replace <main_table> and <filter conditions> based on the user's question and the schema.
+            - Use the correct table name(s) from the schema.
+            - Reuse the SAME filter conditions inside the subquery in OFFSET as in the main WHERE clause.
+            5. Do NOT add backticks, labels (like "SQLQuery:"), or any text before/after the SQL.
+            6. Always produce a single SELECT statement, ending with a semicolon.
             """
-        
         # Generate SQL using LangChain
         chain = create_sql_query_chain(self.llm, self.db)
         sql = chain.invoke({"question": enhanced_question}).strip()
@@ -221,8 +246,8 @@ class SQLTool:
 
         match = re.search(r'SQLQuery:\s*(.*)', sql, re.DOTALL)
         if match:
-            sql_query = match.group(1).strip()
-        sql = self._clean_sql_response(sql_query)
+            sql = match.group(1).strip()
+        sql = self._clean_sql_response(sql)
         
         
         return sql
@@ -348,12 +373,6 @@ class SQLTool:
                 }
 
 
-            offset = f"SELECT COUNT(*) FROM products WHERE tenant_id = '{tenant_id}';"
-            with self.engine.connect() as conn:
-                offset_val = conn.execute(text(offset))
-                off=random.randint(0, offset_val.scalar()-10)
-           
-            sql = sql.replace(";", f" OFFSET {off};")
             # Execute query with retry capability
             result = self._execute_with_retry(sql, question)
             
@@ -366,13 +385,3 @@ class SQLTool:
                 "rows": [],
                 "error": f"Unexpected error: {str(e)}"
             }
-
-    
-    # def get_schema(self) -> Dict[str, List[Dict[str, str]]]:
-    #     """
-    #     Get the loaded database schema
-        
-    #     Returns:
-    #         Database schema information
-    #     """
-    #     return self.schema_info
