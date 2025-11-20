@@ -204,7 +204,7 @@ class SQLTool:
         schema_context = self._build_schema_context()
         
         enhanced_question = f"""
-            You are an expert PostgreSQL query generator.
+            You are an expert SQL query generator.
 
             Database Schema:
             {schema_context}
@@ -213,7 +213,7 @@ class SQLTool:
             {question}
 
             CRITICAL RULES:
-            1. Return ONLY a valid PostgreSQL SQL query. No explanation, no comments, no markdown.
+            1. Return ONLY a valid SQL query. No explanation, no comments, no markdown.
             2. Always include tenant filtering:
             - For every table that has a `tenant_id` column, add:
                 tenant_id = '{tenant_id}'
@@ -225,6 +225,7 @@ class SQLTool:
                 COUNT(*) OVER () AS total_rows
             FROM <main_table> p
             WHERE <all filter conditions, including tenant_id and user filters>
+            ORDER BY p.price ASC
             OFFSET FLOOR(
                 random() * GREATEST(
                     (SELECT COUNT(*) FROM <main_table> WHERE <same filter conditions>) - {self.limit},
@@ -237,7 +238,8 @@ class SQLTool:
             - Use the correct table name(s) from the schema.
             - Reuse the SAME filter conditions inside the subquery in OFFSET as in the main WHERE clause.
             5. Do NOT add backticks, labels (like "SQLQuery:"), or any text before/after the SQL.
-            6. Always produce a single SELECT statement, ending with a semicolon.
+            6. The final query MUST always include a `source_url` , `product_url`, `title`, `price` column.
+            7. Always produce a single SELECT statement, ending with a semicolon.
             """
         # Generate SQL using LangChain
         chain = create_sql_query_chain(self.llm, self.db)

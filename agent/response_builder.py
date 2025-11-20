@@ -53,26 +53,20 @@ class ResponseBuilder:
             Enhanced, user-friendly response string or JSON string with product details
         """
         # Convert raw_response to string if it's a list or other type
-        if isinstance(raw_response, (list, dict)):
-            raw_response = str(raw_response)
-        elif not isinstance(raw_response, str):
-            raw_response = str(raw_response)
-        
-        # Don't enhance cached responses (already processed)
-        if route == 'cache':
-            return raw_response
+        # if isinstance(raw_response, (list, dict)):
+        #     raw_response = str(raw_response)
+        # elif not isinstance(raw_response, str):
+        #     raw_response = str(raw_response)
         
         # Check if response contains product details and should be formatted as JSON
-        if self._contains_product_details(raw_response):
+        # if self._contains_product_details(raw_response):
+        if isinstance(raw_response, (list, dict)):
             formatted_json = await self._format_product_details_as_json(
                 user_query, raw_response, route
             )
             if formatted_json:
                 return formatted_json
             else:
-                # If JSON formatting failed but we detected product data,
-                # try a simple fallback conversion before falling back to raw response
-                print(f"⚠️ Product JSON formatting failed, trying simple fallback...")
                 simple_json = self._simple_json_fallback(raw_response, user_query)
                 if simple_json:
                     print(f"✅ Simple fallback JSON conversion successful")
@@ -80,9 +74,6 @@ class ResponseBuilder:
                 else:
                     print(f"⚠️ All JSON formatting attempts failed, returning raw response to preserve structure")
                     return raw_response
-        else:
-            print(f"ℹ️ No product details detected, proceeding with standard text enhancement")
-        
         # Standard response enhancement for non-product queries
         # Build system prompt based on route type
         system_prompt = self._get_system_prompt(route)
@@ -110,54 +101,54 @@ class ResponseBuilder:
             # Fallback to raw response if enhancement fails
             return raw_response
     
-    def _contains_product_details(self, raw_response: str) -> bool:
-        """
-        Detect if the raw response contains product details that should be formatted as JSON
+    # def _contains_product_details(self, raw_response: str) -> bool:
+    #     """
+    #     Detect if the raw response contains product details that should be formatted as JSON
         
-        Returns:
-            True if response contains structured product data
-        """
-        # Ensure raw_response is a string
-        if not isinstance(raw_response, str):
-            raw_response = str(raw_response)
+    #     Returns:
+    #         True if response contains structured product data
+    #     """
+    #     # Ensure raw_response is a string
+    #     if not isinstance(raw_response, str):
+    #         raw_response = str(raw_response)
         
-        # Check for common product-related patterns
-        product_indicators = [
-            r'product[_\s]+(?:id|sku|name|title)',
-            r'(?:price|cost|revenue)',
-            r'(?:quantity|stock|inventory)',
-            r'(?:category|type|brand)',
-            r'sales[_\s]+(?:figure|data|amount)',
-            r'\d+\s*(?:items?|products?|skus?)',
-            # SQL-like output patterns
-            r'\(\d+,\s*["\']',  # Tuple-like data (1, 'Product Name', ...)
-            r'\[.*?\].*?\[.*?\]',  # List of lists
-            # Check if it looks like tabular data
-            r'(?:\w+:\s*\d+.*?\n){3,}',  # Multiple key:value pairs
-            # PostgreSQL-style dict output
-            r'\{["\'](?:product_|sku|price|quantity)',  # Dict with product keys
-            # List of dicts pattern
-            r'\[\s*\{.*?product.*?\}',  # List containing dicts with product info
-        ]
+    #     # Check for common product-related patterns
+    #     product_indicators = [
+    #         r'product[_\s]+(?:id|sku|name|title)',
+    #         r'(?:price|cost|revenue)',
+    #         r'(?:quantity|stock|inventory)',
+    #         r'(?:category|type|brand)',
+    #         r'sales[_\s]+(?:figure|data|amount)',
+    #         r'\d+\s*(?:items?|products?|skus?)',
+    #         # SQL-like output patterns
+    #         r'\(\d+,\s*["\']',  # Tuple-like data (1, 'Product Name', ...)
+    #         r'\[.*?\].*?\[.*?\]',  # List of lists
+    #         # Check if it looks like tabular data
+    #         r'(?:\w+:\s*\d+.*?\n){3,}',  # Multiple key:value pairs
+    #         # PostgreSQL-style dict output
+    #         r'\{["\'](?:product_|sku|price|quantity)',  # Dict with product keys
+    #         # List of dicts pattern
+    #         r'\[\s*\{.*?product.*?\}',  # List containing dicts with product info
+    #     ]
         
-        response_lower = raw_response.lower()
+    #     response_lower = raw_response.lower()
         
-        # Count matching patterns
-        match_count = sum(1 for pattern in product_indicators if re.search(pattern, response_lower))
+    #     # Count matching patterns
+    #     match_count = sum(1 for pattern in product_indicators if re.search(pattern, response_lower))
         
-        # Also check for specific SQL result patterns
-        # Look for patterns like [{'product_id': 1, 'name': '...'}]
-        dict_list_pattern = r'\[\s*\{[^}]*(?:product|sku|price|sales|revenue|quantity)[^}]*\}'
-        if re.search(dict_list_pattern, response_lower):
-            match_count += 2  # Strong indicator
+    #     # Also check for specific SQL result patterns
+    #     # Look for patterns like [{'product_id': 1, 'name': '...'}]
+    #     dict_list_pattern = r'\[\s*\{[^}]*(?:product|sku|price|sales|revenue|quantity)[^}]*\}'
+    #     if re.search(dict_list_pattern, response_lower):
+    #         match_count += 2  # Strong indicator
         
-        # If multiple product indicators are present, it's likely product data
-        return match_count >= 2
+    #     # If multiple product indicators are present, it's likely product data
+    #     return match_count >= 2
     
     async def _format_product_details_as_json(
         self, 
         user_query: str, 
-        raw_response: Any,  # Can be str, list, or dict
+        raw_response: Any,
         route: str
     ) -> Optional[str]:
         """
@@ -172,36 +163,50 @@ class ResponseBuilder:
             JSON string with formatted product details or None if formatting fails
         """
         # Ensure raw_response is a string
-        if not isinstance(raw_response, str):
-            raw_response = str(raw_response)
-        system_prompt = """You are a Data Formatter Specialist AI. Your primary role is to intelligently extract product details from raw, unstructured data and format them into a clean, structured JSON format ready for downstream processing.
+        if isinstance(raw_response, (dict, list)):
+            raw_response = json.dumps(raw_response)
 
-Your Mission:
-Carefully analyze the raw input, identifying and extracting every product listed.
-Format each product into a clean and consistent JSON object using the schema below.
-Return a single, fully-formed JSON object only—no text, no comments, no markdown.
+        system_prompt = """
+        You are an intelligent Data Formatter and Product Categorization AI designed to process structured product arrays (in JSON format) for the purpose of generating clean, categorized product recommendations.
 
-*Expected JSON Structure:
+        Your Tasks:
+        1. Analyze the input JSON array of products.
+        2. Deduplicate entries based on `title` and `source_url`.
+        3. Categorize products into logical groups using the `title` field. Categories should be inferred intelligently (e.g., "Dark Chocolates", "Nut Spreads", "Assorted Packs").
+        4. Return the structured output in the defined JSON schema below.
+        5. Generate an interactive, user-friendly summary that makes the results feel personalized and engaging.
 
-{
-  "summary": "An interactive message to the user summarizing the results.",
-  "total_count": <number of products>,
-  "products": [
-    {
-      "product_id": "...",
-      "product_name": "...",
-      "price": <number>,
-      "category": "...",
-      "region": "...",
-      "...": "any other relevant fields extracted from the raw data"
-    }
-  ],
-  "metadata": {
-    "data_source": "database | report | combined",
-    "query_type": "top_products | sales_data | inventory | recommendations"
-  }
-}
-"""
+        Expected Output Schema:
+        {
+        "summary": "Hey! I found some amazing products for you based on your preferences — {X} items across {Y} categories like Dark Chocolates and Nut Spreads. Check them out below!",
+        "categories": [
+            {
+            "category_name": "Dark Chocolates",
+            "products": [
+                {
+                "title": "...",
+                "price": <number>,
+                "source_url": "...",
+                "product_image": "...",
+                "...": "any additional relevant fields like pack_size or flavor if inferred"
+                }
+            ]
+            },
+            ...
+        ]
+        }
+
+        Formatting Guidelines:
+        - Parse price values as numbers.
+        - Infer product types (e.g., "Chocolate", "Spread") and flavors (e.g., "Orange", "Almond", "Sea Salt") from the title.
+        - Use meaningful, user-relevant category names.
+        - Keep the tone of the summary friendly and recommendation-focused.
+        - Do not fabricate data—omit fields if information is not clearly present.
+        - Maintain clean, consistent formatting across all products.
+
+        IMPORTANT: Output must be a single JSON object, with no extra text, comments, or markdown.
+        """
+
 
         user_prompt = f"""USER QUESTION:
 {user_query}
