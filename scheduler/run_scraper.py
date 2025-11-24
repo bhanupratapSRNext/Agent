@@ -154,7 +154,7 @@ def start_scheduler():
         # Add job to run every minute
         scheduler.add_job(
             process_pending_configurations,
-            trigger=CronTrigger(minute='*/30'), 
+            trigger=CronTrigger(minute='*'), 
             id='process_pending_configs',
             name='Process Pending Configurations',
             replace_existing=True
