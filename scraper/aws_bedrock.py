@@ -107,7 +107,7 @@ class BedrockParserGenerator:
         """
         
         # Prepare HTML sample (truncate if too large)
-        html_preview = raw_html[:30000] if len(raw_html) > 30000 else raw_html
+        raw_html = raw_html[:60000] if len(raw_html) > 60000 else raw_html
         
         system_prompt = """You are an expert e-commerce data extraction AI. 
 Your task is to analyze raw HTML and extract product information.
@@ -149,12 +149,12 @@ Return flexible JSON format where each product is an object with whatever fields
 If you find escaped JSON, parse it properly. If a field is missing, use empty string "".
 
 HTML to analyze:
-{html_preview}
+{raw_html}
 
 Respond with ONLY the JSON array, no markdown code blocks, no explanations."""
 
         try:
-            response_text = self._invoke_bedrock(system_prompt, user_prompt, max_tokens=4000)
+            response_text = self._invoke_bedrock(system_prompt, user_prompt)
             
             # Parse JSON response
             products = self._parse_json_response(response_text)
@@ -182,47 +182,42 @@ Respond with ONLY the JSON array, no markdown code blocks, no explanations."""
             Generated Python function code as string
         """
         
-        # Prepare HTML sample
         html_preview = raw_html[:20000] if len(raw_html) > 20000 else raw_html
         
-        # Prepare details sample (first 3 products)
-        details_sample = extracted_details[:3]
-        
-        system_prompt = """You are an expert Python web scraping code generator.
-Your task is to generate a parse_products(html) function that can extract product data from similar HTML pages.
-Generate ONLY the Python function code, no markdown, no explanations."""
+        details_sample = extracted_details[:1]
 
-        user_prompt = f"""You extracted these products from the HTML:
-{json.dumps(details_sample, indent=2)}
+        system_prompt = """You are a code-generating assistant that specializes in web scraping and HTML parsing. Your task is to create a single parse_products(html) Python function that uses BeautifulSoup to extract structured data from raw HTML pages.
 
-From this raw HTML:
+Input:
+A raw HTML page (as a string), representing a specific webpage layout.
+A list of extracted details (as key-value pairs) that were manually retrieved from the same page.
+Objective:
+Generate a robust Python parsing function that:
+import the dependencies inside the function
+Uses BeautifulSoup to parse the HTML.
+Extracts all the required fields as shown in the provided list of extracted details.
+Can generalize to parse similar pages with the same structure.
+JSON-LD may be either a dict or a list. Always check:
+    * if it's a list → iterate and pick the first dict with "@type": "Product"
+    * never call .get() on a list
+    * only call .get() after confirming `isinstance(obj, dict)`
+
+Handles edge cases gracefully (e.g., missing fields, minor layout changes)."""
+
+        user_prompt = f"""Below is the raw HTML of a webpage and a list of dictionarie of manually extracted details. Use this information to generate a Python function that parses similar HTML pages and extracts the same type of details.
+
+### Raw HTML:
 {html_preview}
 
-Now generate a Python function called parse_products(html) that:
-1. Takes raw HTML as input
-2. Uses the SAME extraction method you used (regex for JSON, BeautifulSoup for HTML, etc.)
-3. Returns a list of product dictionaries with keys: title, price, image, link, description
-
-Requirements:
-- The function must work on similar HTML pages from the same website
-- Use proper error handling (return [] if extraction fails)
-- Import all needed libraries inside the function (re, json, BeautifulSoup, etc.)
-- Use the ACTUAL patterns you see in the HTML (not generic placeholders)
-- For escaped JSON: remember quotes are escaped as \\" in the HTML
-
-Return ONLY the function code, starting with:
-def parse_products(html):
-
-No markdown code blocks, no explanations, just the Python code."""
-
+### Extracted Details:
+{json.dumps(details_sample, indent=2)}"""
         try:
-            response_text = self._invoke_bedrock(system_prompt, user_prompt, max_tokens=3000)
+            response_text = self._invoke_bedrock(system_prompt, user_prompt)
             
             # Clean up the response (remove markdown if present)
             function_code = self._clean_function_code(response_text)
             
             print(f"✓ Generated parser function ({len(function_code)} chars)")
-            print(f"  Preview: {function_code[:100]}...")
             
             return function_code
             
@@ -355,7 +350,7 @@ No markdown code blocks, no explanations, just the Python code."""
         return intersection / union if union > 0 else 0.0
 
 
-async def process_urls_with_bedrock(urls_and_html: List[tuple]) -> List[Dict]:
+async def process_urls_with_bedrock_and_generate_parser(dom_result: Dict[str, Any]) -> Dict[str, Optional[str]]:
     """
     Process multiple URLs with their HTML using Bedrock approach.
     This function integrates with the app.py scraper workflow.
@@ -366,76 +361,46 @@ async def process_urls_with_bedrock(urls_and_html: List[tuple]) -> List[Dict]:
     Returns:
         List of all extracted products from all pages
     """
-    print("\n" + "🧪 " + "="*75)
     print("PROCESSING PAGES WITH AWS BEDROCK")
-    print("="*78 + "\n")
     
     try:
-        if not urls_and_html:
+        payload = {
+                "status": False,
+                "parse_function": None,
+        }
+        if not dom_result:
             print("❌ No pages to process")
-            return []
+            return payload
         
         # Initialize generator
         generator = BedrockParserGenerator()
         
-        # Take first 3 pages for analysis
-        sample_pages = urls_and_html[:3]
-        remaining_pages = urls_and_html[3:]
-        
-        print(f"📊 Processing {len(sample_pages)} sample pages for analysis")
-        print(f"📄 {len(remaining_pages)} remaining pages to process with generated parser")
-        
-        # Step 1: Extract details from EACH sample page individually
-        print("\n🔍 Step 1: Extracting products from each sample page...")
         all_sample_details = []
         sample_page_details = []  # Store details per page for validation
-        
-        for i, (url, html) in enumerate(sample_pages, 1):
-            print(f"\n  Analyzing sample page {i}/{len(sample_pages)}...")
-            try:
-                page_details = generator.extract_details_from_html(html)
-                print(f"  ✓ Page {i}: Extracted {len(page_details)} products")
-                
-                # Store with page reference
-                sample_page_details.append({
-                    'url': url,
-                    'html': html,
-                    'products': page_details
-                })
-                
-                all_sample_details.extend(page_details)
-                
-            except Exception as e:
-                print(f"  ✗ Page {i}: Error - {e}")
-                continue
-        
-        if not all_sample_details:
-            print(" No products extracted from any sample page")
-            return []
-        
-        print(f"\n✓ Total extracted from samples: {len(all_sample_details)} products")
-        
-        # Step 2: Generate parser function using all sample data with retry
-        print("\n🛠️  Step 2: Generating parser function from sample data...")
-        
-        # Combine HTMLs for parser generation (to learn patterns from multiple pages)
-        combined_html = "\n\n<!-- PAGE SEPARATOR -->\n\n".join([html for _, html in sample_pages])
-        
+
         parse_function = None
+        html = dom_result.get("html")
+
+        print(type(html))
+        page_details = generator.extract_details_from_html(html)
+        
+        sample_page_details.append({
+            'url': dom_result.get("url"),
+            'html': html,
+            'products': page_details
+        })
+        
+        all_sample_details.extend(page_details)
+
+        
         retry_attempt = 0
         
-        # Keep retrying until we get a working function
-        while parse_function is None:
-            retry_attempt += 1
-            try:
+        if page_details:
+            while parse_function is None:
+                retry_attempt += 1
                 print(f"  Attempt {retry_attempt}: Generating parser function...")
-                parser_function_code = generator.generate_parser_function(combined_html, all_sample_details)
-                print(f"  ✓ Generated parser function ({len(parser_function_code)} chars)")
+                parser_function_code = generator.generate_parser_function(html, all_sample_details)                
                 
-                # Step 3: Validate the generated function
-                print(f"  🧪 Testing parser function...")
-                
-                # Execute the parser function
                 exec_globals = {'__builtins__': __builtins__}
                 exec_locals = {}
                 exec(parser_function_code, exec_globals, exec_locals)
@@ -446,93 +411,83 @@ async def process_urls_with_bedrock(urls_and_html: List[tuple]) -> List[Dict]:
                     continue
                 
                 # Test on first sample page
-                test_products = test_parse_function(sample_pages[0][1])
+                test_products = test_parse_function(html)
                 
                 if not isinstance(test_products, list):
                     print(f"  ❌ Parser returned {type(test_products).__name__} instead of list")
                     continue
                 
                 print(f"  ✅ Parser function works! Extracted {len(test_products)} products from test page")
-                parse_function = test_parse_function  # Success! Exit loop
-                
-            except Exception as e:
-                print(f"  ❌ Error: {str(e)}")
-                continue
+                if len(test_products)==0:
+                    parse_function=None
+                    break
+
+                parse_function = parser_function_code  
+                break   # Success! Exit loop
+    
+        if not all_sample_details:
+            print(" No products extracted from any sample page")
+            return payload
         
-        # validation_results = []
-        # total_match_ratio = 0.0
+        return {
+            "status": True,
+            "parse_function": parse_function
+        }
+    
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return payload
+
+
+async def process_urls_with_parser(raw_html: str, parser_code: str) -> List[Dict]:
+    """
+    Process multiple URLs with their HTML using a provided parser function.
+    
+    Args:
+        urls_and_html: List of (url, html_content) tuples
+        parser_code: String containing the parser function code (must define parse_products function)
         
-        # for i, page_data in enumerate(sample_page_details, 1):
-        #     try:
-        #         validation_result = generator.validate_parser_function(
-        #             parser_function_code,
-        #             page_data['html'],
-        #             page_data['products']
-        #         )
-                
-        #         validation_results.append(validation_result)
-        #         total_match_ratio += validation_result.get('match_ratio', 0.0)
-                
-        #         status = "✅" if validation_result['success'] else "❌"
-        #         print(f"  {status} Sample page {i}: {validation_result['extracted_count']} extracted, "
-        #               f"match ratio: {validation_result.get('match_ratio', 0.0):.2%}")
-                
-        #     except Exception as e:
-        #         print(f"  ❌ Sample page {i}: Validation error - {e}")
-        #         validation_results.append({'success': False, 'match_ratio': 0.0})
+    Returns:
+        List of all extracted products from all pages
+    """
+    print("PROCESSING URLs WITH PROVIDED PARSER")
+    
+    try:
+        if not raw_html:
+            print("❌ No pages to process")
+            return []
         
-        # # Calculate average match ratio
-        # avg_match_ratio = total_match_ratio / len(validation_results) if validation_results else 0.0
-        # successful_validations = sum(1 for v in validation_results if v['success'])
+        if not parser_code:
+            print("❌ No parser code provided")
+            return []
         
-        # print(f"\n  Validation summary: {successful_validations}/{len(sample_pages)} pages passed")
-        # print(f"  Average match ratio: {avg_match_ratio:.2%}")
+        # Execute the parser code to get the parse_products function
+        exec_globals = {'__builtins__': __builtins__}
+        exec_locals = {}
         
-        all_products = []
+        try:
+            exec(parser_code, exec_globals, exec_locals)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return []
         
-        # Proceed if at least 2 out of 3 samples passed or avg match ratio > 0.5
-        # validation_passed = (successful_validations >= 2 or avg_match_ratio > 0.5)
+        # Get the parse_products function
+        parse_function = exec_locals.get('parse_products')
+        if not parse_function:
+            print("❌ No 'parse_products' function found in provided parser code")
+            return []
         
+        validation_passed = True
         
-        validation_passed = True 
         if validation_passed:
-            print(f"\n✅ Validation PASSED (threshold met)")
-            print("\n🚀 Step 4: Applying parser to all pages...")
-            
-            # Process all pages with the generated parser
-            for i, (url, html) in enumerate(urls_and_html, 1):
-                try:
-                    products = parse_function(html)
-                    
-                    # Add source URL to each product
-                    for product in products:
-                        product['source_url'] = url
-                    
-                    all_products.extend(products)
-                    print(f"  Page {i}/{len(urls_and_html)}: {len(products)} products extracted")
-                    
-                except Exception as e:
-                    print(f"  Page {i}/{len(urls_and_html)}: Error - {e}")
-                    continue
-            
-            print(f"\n✓ Total products extracted: {len(all_products)}")
-            
-        else:
-            print(f"\n❌ Validation FAILED (threshold not met)")
-            print("Falling back to direct LLM extraction results...")
-            
-            # Fallback: Use the extracted_details from Step 1 for all sample pages
-            for page_data in sample_page_details:
-                for product in page_data['products']:
-                    product['source_url'] = page_data['url']
-                all_products.extend(page_data['products'])
-            
-            print(f"✓ Using {len(all_products)} products from direct extraction")
-        
-        return all_products
+                product_detail = parse_function(raw_html)
+
+        return product_detail
         
     except Exception as e:
-        print(f"\n❌ Bedrock processing failed: {e}")
+        print(f"\n❌ Error in process_urls_with_parser: {e}")
         import traceback
         traceback.print_exc()
         return []
