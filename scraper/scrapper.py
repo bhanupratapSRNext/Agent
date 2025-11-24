@@ -5,8 +5,10 @@ from pydantic import BaseModel
 from scraper.sitemap_analyzer import SitemapAnalyzer
 from scraper.dom_fetcher_async import AsyncDOMFetcher
 from scraper.utils import create_response, logger, log_step
-from scraper.aws_bedrock import process_urls_with_bedrock
+from scraper.aws_bedrock import process_urls_with_bedrock_and_generate_parser
+from scraper.aws_bedrock import process_urls_with_parser
 from scraper.db_saver import save_bedrock_products_to_db
+from scraper.formate_input import formate_raw_html 
 
 # Create router for scraper endpoints
 router = APIRouter(prefix="/scraper", tags=["scraper"])
@@ -120,16 +122,16 @@ async def full_scrape(request: FullScrapeRequest):
                     
                     # Fetch HTML for all pages first
                     logger.info("📥 Fetching HTML for all pages...")
-                    urls_and_html = []
+                    bedrock_result={
+                        "status": False,
+                        "parse_function": None,
+                    }
                     
                     for i, page_url in enumerate(pages_to_scrape, 1):
-                        # if i > 4:  # Limit for testing
-                        #     break
-                            
                         try:
                             scrape_stats['pages_attempted'] += 1
                             logger.info(f"Fetching page {i}/{len(pages_to_scrape)}: {page_url}")
-                            
+                        
                             # Determine SPA mode
                             spa_mode = request.spa_mode if request.spa_mode is not None else True
                             
@@ -138,23 +140,36 @@ async def full_scrape(request: FullScrapeRequest):
                                 dom_result = await fetcher.fetch_with_scroll(page_url, spa_mode=spa_mode)
                             else:
                                 dom_result = await fetcher.fetch(page_url, fast_mode=request.fast_mode, spa_mode=spa_mode)
-                            # print(dom_result)
-                            urls_and_html.append((page_url, dom_result['html']))
+                            
+                            formated_html = await formate_raw_html(dom_result.get("html"))
+
+                            dom_result['html']=formated_html
+                            
+                            if i<3 and bedrock_result.get("status")==False: #use the LLM to generate a parse function
+                                bedrock_result = await process_urls_with_bedrock_and_generate_parser(dom_result)
+                                
+                            if bedrock_result and bedrock_result.get("status") == True:
+                                bedrock_product=await process_urls_with_parser(dom_result.get("html"),bedrock_result.get("parse_function"))
+                                db_save_result = await save_bedrock_products_to_db(bedrock_product, tenant_id=domain)
+                            
+                            if i%10==0:
+                                from config.mongo_con import client
+                                collection = client["chat-bot"]
+                                indexes_coll = collection["scraping_stats"]
+                                indexes_coll.update_one(
+                                {"_id": domain},                
+                                {
+                                  "$set": {
+                                  "processed_till": i
+                                  }
+                                },
+                                upsert=True  )
+                            
                             
                         except Exception as e:
                             logger.error(f"Failed to fetch {page_url}: {e}")
                             scrape_stats['pages_failed'] += 1
                             continue
-                    
-                    # Use script generation to process all pages
-                    if urls_and_html:
-                        #Bedrock approach
-                        bedrock_products = await process_urls_with_bedrock(urls_and_html)
-                        logger.info(f"🧪 Bedrock test extracted: {len(bedrock_products)} products")
-                        
-                        # Save extracted products to PostgreSQL database
-                        db_save_result = await save_bedrock_products_to_db(bedrock_products,tenant_id=domain)
-                        logger.info(f"💾 Database save result: {db_save_result['message']}")
                     
                 except Exception as e:
                     logger.error(f"Script generation failed: {e}")
@@ -166,7 +181,6 @@ async def full_scrape(request: FullScrapeRequest):
             logger.info(f"   🌐 Website: {request.url}")
             logger.info(f"   📄 Pages attempted: {scrape_stats['pages_attempted']}")
             logger.info(f"   ❌ Pages failed: {scrape_stats['pages_failed']}")
-            logger.info(f"   🧪 Bedrock products extracted: {len(bedrock_products)}")
     
             
             result = {
