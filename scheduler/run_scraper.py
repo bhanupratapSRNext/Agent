@@ -177,23 +177,3 @@ def stop_scheduler():
     except Exception as e:
         logger.error(f"❌ Error stopping scheduler: {e}")
 
-
-# For manual testing
-async def main():
-    """Main function for testing the scheduler"""
-    logger.info("Starting scheduler test...")
-    
-    # Start scheduler
-    start_scheduler()
-    
-    try:
-        # Keep running
-        while True:
-            await asyncio.sleep(1)
-    except KeyboardInterrupt:
-        logger.info("Received interrupt signal")
-        stop_scheduler()
-
-
-if __name__ == "__main__":
-    asyncio.run(main())

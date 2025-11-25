@@ -25,13 +25,31 @@ from contextlib import asynccontextmanager
 # Load environment variables
 load_dotenv()
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Application lifespan context:
+    - Starts the scheduler on startup
+    - Stops the scheduler on shutdown
+    """
+    start_scheduler()
+    logging.info("Scheduler started successfully")
+    try:
+        yield
+    finally:
+        stop_scheduler()
+        logging.info("Scheduler stopped successfully")
+
+        
 # Initialize FastAPI with ACP SDK and Magentic-One
 app = FastAPI(
     title="E-commerce Agent Service",
     version="2.0.0",
     description="ACP-compliant e-commerce agent powered by Microsoft's Magentic-One multi-agent orchestrator",
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
+    lifespan=lifespan
 )
 
 # CORS middleware with configuration
@@ -52,20 +70,6 @@ setup_routes(app, ecommerce_agent, memory)
 
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """
-    Application lifespan context:
-    - Starts the scheduler on startup
-    - Stops the scheduler on shutdown
-    """
-    start_scheduler()
-    logging.info("Scheduler started successfully")
-    try:
-        yield
-    finally:
-        stop_scheduler()
-        logging.info("Scheduler stopped successfully")
 
 # Main service endpoint
 @app.get("/")
