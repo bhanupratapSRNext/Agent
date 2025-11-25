@@ -6,8 +6,7 @@ import random
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeout
 from typing import Optional, Dict
 from scraper.config import Config
-from scraper.utils import logger, log_step
-
+from scraper.utils import logger
 
 class AsyncDOMFetcher:
     """Fetches DOM content from websites using Playwright's Async API."""
@@ -32,8 +31,8 @@ class AsyncDOMFetcher:
         Raises:
             Exception: If fetching fails
         """
-        log_step(f"Fetching DOM from {url}")
-        
+        logger.info(f"Fetch parameters: {url}")
+
         # Adaptive timeout based on fast_mode
         timeout = self.timeout if not fast_mode else min(self.timeout, 45000)
         
@@ -254,7 +253,7 @@ class AsyncDOMFetcher:
         Returns:
             Dictionary containing HTML content and metadata
         """
-        log_step(f"Fetching DOM with scroll from {url} (spa_mode: {spa_mode})")
+        logger.info(f"Fetching DOM with scroll from {url} (spa_mode: {spa_mode})")
         
         try:
             async with async_playwright() as playwright:

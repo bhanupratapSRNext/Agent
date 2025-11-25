@@ -2,6 +2,7 @@ from bs4 import BeautifulSoup
 import json
 import re
 from typing import Optional, Dict, List
+from scraper.utils import logger
 
 async def formate_raw_html(
     html: str,
@@ -24,13 +25,13 @@ async def formate_raw_html(
         remove_comments: Remove HTML comments
         remove_hidden_elements: Remove elements with display:none or visibility:hidden
         extract_tables: Keep specification/feature tables
-        verbose: Print cleaning statistics
+        verbose: log cleaning statistics
     
     Returns:
         Normalized HTML string
     """
     if verbose:
-        print(f"Original HTML length: {len(html):,} characters")
+        logger.info(f"Original HTML length: {len(html):,} characters")
     
     soup = BeautifulSoup(html, 'html.parser')
     
@@ -157,14 +158,14 @@ async def formate_raw_html(
     
     if verbose:
         reduction_pct = ((len(html) - len(cleaned_html)) / len(html)) * 100
-        print(f"Cleaned HTML length: {len(cleaned_html):,} characters")
-        print(f"Reduction: {reduction_pct:.1f}%")
+        logger.info(f"Cleaned HTML length: {len(cleaned_html):,} characters")
+        logger.info(f"Reduction: {reduction_pct:.1f}%")
         
         # Count preserved structured data
         final_soup = BeautifulSoup(cleaned_html, 'html.parser')
         json_ld_count = len(final_soup.find_all('script', type='application/ld+json'))
         meta_count = len(final_soup.find_all('meta'))
-        print(f"Preserved: {json_ld_count} JSON-LD scripts, {meta_count} meta tags")
+        logger.info(f"Preserved: {json_ld_count} JSON-LD scripts, {meta_count} meta tags")
     
     return cleaned_html
 

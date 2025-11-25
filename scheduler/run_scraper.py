@@ -63,14 +63,7 @@ async def process_pending_configurations():
                 logger.info(f"   Index: {index_name}")
                 logger.info(f"   Root URL: {root_url}")
         
-                indexes_coll.update_one(
-                        {"_id": config_id},
-                        {
-                            "$set": {
-                                "progress": "processing",
-                            }
-                        }
-                    )
+                
                 # Call the setup function
                 result = await setup_user_agent_and_scrape(
                     user_id=user_id,
@@ -107,7 +100,7 @@ async def process_pending_configurations():
                                 "processing_completed_at": datetime.utcnow(),
                                 "status": "failed",
                                 "last_error": result.get("error", "Unknown error"),
-                                "progress": "failed"
+                                "progress": "pending"
                             }
                         }
                     )

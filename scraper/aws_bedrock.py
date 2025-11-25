@@ -10,6 +10,7 @@ import os
 from typing import Dict, List, Optional, Any
 import asyncio
 from dotenv import load_dotenv
+from scraper.utils import logger
 
 # Load environment variables from .env file
 load_dotenv()
@@ -47,11 +48,11 @@ class BedrockParserGenerator:
         # Model configuration
         # Using Claude 3 Sonnet - good balance of speed and capability
         self.model_id = os.getenv('BEDROCK_MODEL_ID')
-        
-        print(f"✓ AWS Bedrock client initialized")
-        print(f"  Region: {self.bedrock_config.region_name}")
-        print(f"  Model: {self.model_id}")
-    
+
+        logger.info(f"✓ AWS Bedrock client initialized")
+        logger.info(f"  Region: {self.bedrock_config.region_name}")
+        logger.info(f"  Model: {self.model_id}")
+
     def _invoke_bedrock(self, system_prompt: str, user_prompt: str, max_tokens: int = 4000) -> str:
         """
         Invoke AWS Bedrock with given prompts.
@@ -93,6 +94,7 @@ class BedrockParserGenerator:
         if 'content' in response_body and len(response_body['content']) > 0:
             return response_body['content'][0]['text']
         
+        logger.error(" No response content from Bedrock model")
         raise Exception("No response from Bedrock model")
     
     def extract_details_from_html(self, raw_html: str) -> List[Dict[str, Any]]:
@@ -159,14 +161,14 @@ Respond with ONLY the JSON array, no markdown code blocks, no explanations."""
             # Parse JSON response
             products = self._parse_json_response(response_text)
             
-            print(f"✓ Extracted {len(products)} products from HTML")
+            logger.info(f"✓ Extracted {len(products)} products from HTML")
             if products:
-                print(f"  Sample product: {products[0].get('title', 'N/A')[:50]}...")
+                logger.info(f"  Sample product: {products[0].get('title', 'N/A')[:50]}...")
             
             return products
             
         except Exception as e:
-            print(f"❌ Error extracting details: {e}")
+            logger.error(f"❌ Error extracting details: {e}")
             raise
     
     def generate_parser_function(self, raw_html: str, extracted_details: List[Dict[str, Any]]) -> str:
@@ -217,12 +219,12 @@ Handles edge cases gracefully (e.g., missing fields, minor layout changes)."""
             # Clean up the response (remove markdown if present)
             function_code = self._clean_function_code(response_text)
             
-            print(f"✓ Generated parser function ({len(function_code)} chars)")
+            logger.info(f"✓ Generated parser function ({len(function_code)} chars)")
             
             return function_code
             
         except Exception as e:
-            print(f"❌ Error generating parser function: {e}")
+            logger.error(f"❌ Error generating parser function: {e}")
             raise
     
     def validate_parser_function(self, function_code: str, test_html: str, 
@@ -238,9 +240,7 @@ Handles edge cases gracefully (e.g., missing fields, minor layout changes)."""
         Returns:
             Validation results dictionary
         """
-        print("\n" + "="*80)
-        print("STEP 3: Validating generated parser function")
-        print("="*80)
+        logger.info("STEP 3: Validating generated parser function")
         
         try:
             # Execute the function code
@@ -271,10 +271,10 @@ Handles edge cases gracefully (e.g., missing fields, minor layout changes)."""
                     'extracted_count': 0
                 }
             
-            print(f"✓ Function executed successfully")
-            print(f"  Expected: {len(expected_products)} products")
-            print(f"  Extracted: {len(extracted_products)} products")
-            
+            logger.info(f"✓ Function executed successfully")
+            logger.info(f"  Expected: {len(expected_products)} products")
+            logger.info(f"  Extracted: {len(extracted_products)} products")
+
             # Compare with expected
             match_ratio = self._compare_products(expected_products, extracted_products)
             
@@ -289,7 +289,7 @@ Handles edge cases gracefully (e.g., missing fields, minor layout changes)."""
             }
             
         except Exception as e:
-            print(f"❌ Validation error: {e}")
+            logger.error(f"❌ Validation error: {e}")
             return {
                 'success': False,
                 'error': str(e),
@@ -361,7 +361,7 @@ async def process_urls_with_bedrock_and_generate_parser(dom_result: Dict[str, An
     Returns:
         List of all extracted products from all pages
     """
-    print("PROCESSING PAGES WITH AWS BEDROCK")
+    logger.info("PROCESSING PAGES WITH AWS BEDROCK")
     
     try:
         payload = {
@@ -369,7 +369,7 @@ async def process_urls_with_bedrock_and_generate_parser(dom_result: Dict[str, An
                 "parse_function": None,
         }
         if not dom_result:
-            print("❌ No pages to process")
+            logger.warning("❌ No pages to process")
             return payload
         
         # Initialize generator
@@ -381,7 +381,6 @@ async def process_urls_with_bedrock_and_generate_parser(dom_result: Dict[str, An
         parse_function = None
         html = dom_result.get("html")
 
-        print(type(html))
         page_details = generator.extract_details_from_html(html)
         
         sample_page_details.append({
@@ -398,7 +397,7 @@ async def process_urls_with_bedrock_and_generate_parser(dom_result: Dict[str, An
         if page_details:
             while parse_function is None:
                 retry_attempt += 1
-                print(f"  Attempt {retry_attempt}: Generating parser function...")
+                logger.info(f"  Attempt {retry_attempt}: Generating parser function...")
                 parser_function_code = generator.generate_parser_function(html, all_sample_details)                
                 
                 exec_globals = {'__builtins__': __builtins__}
@@ -407,17 +406,17 @@ async def process_urls_with_bedrock_and_generate_parser(dom_result: Dict[str, An
                 test_parse_function = exec_locals.get('parse_products')
                 
                 if not test_parse_function:
-                    print("  ❌ Parser function 'parse_products' not found in generated code")
+                    logger.warning("  ❌ Parser function 'parse_products' not found in generated code")
                     continue
                 
                 # Test on first sample page
                 test_products = test_parse_function(html)
                 
                 if not isinstance(test_products, list):
-                    print(f"  ❌ Parser returned {type(test_products).__name__} instead of list")
+                    logger.warning(f"  ❌ Parser returned {type(test_products).__name__} instead of list")
                     continue
-                
-                print(f"  ✅ Parser function works! Extracted {len(test_products)} products from test page")
+
+                logger.info(f"  ✅ Parser function works! Extracted {len(test_products)} products from test page")
                 if len(test_products)==0:
                     parse_function=None
                     break
@@ -426,7 +425,7 @@ async def process_urls_with_bedrock_and_generate_parser(dom_result: Dict[str, An
                 break   # Success! Exit loop
     
         if not all_sample_details:
-            print(" No products extracted from any sample page")
+            logger.warning(" No products extracted from any sample page")
             return payload
         
         return {
@@ -435,8 +434,7 @@ async def process_urls_with_bedrock_and_generate_parser(dom_result: Dict[str, An
         }
     
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        logger.error(f"❌ Error processing with Bedrock: {e}")
         return payload
 
 
@@ -451,15 +449,15 @@ async def process_urls_with_parser(raw_html: str, parser_code: str) -> List[Dict
     Returns:
         List of all extracted products from all pages
     """
-    print("PROCESSING URLs WITH PROVIDED PARSER")
+    logger.info("PROCESSING URLs WITH PROVIDED PARSER")
     
     try:
         if not raw_html:
-            print("❌ No pages to process")
+            logger.warning("❌ No pages to process")
             return []
         
         if not parser_code:
-            print("❌ No parser code provided")
+            logger.warning("❌ No parser code provided")
             return []
         
         # Execute the parser code to get the parse_products function
@@ -469,14 +467,13 @@ async def process_urls_with_parser(raw_html: str, parser_code: str) -> List[Dict
         try:
             exec(parser_code, exec_globals, exec_locals)
         except Exception as e:
-            import traceback
-            traceback.print_exc()
+            logger.error(f"❌ Error executing parser code: {e}")
             return []
         
         # Get the parse_products function
         parse_function = exec_locals.get('parse_products')
         if not parse_function:
-            print("❌ No 'parse_products' function found in provided parser code")
+            logger.warning("❌ No 'parse_products' function found in provided parser code")
             return []
         
         validation_passed = True
@@ -487,7 +484,7 @@ async def process_urls_with_parser(raw_html: str, parser_code: str) -> List[Dict
         return product_detail
         
     except Exception as e:
-        print(f"\n❌ Error in process_urls_with_parser: {e}")
+        logger.error(f"❌ Error in process_urls_with_parser: {e}")
         import traceback
         traceback.print_exc()
         return []

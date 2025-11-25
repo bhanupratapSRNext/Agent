@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 logging.getLogger('watchfiles').setLevel(logging.WARNING)
+logging.getLogger('watchfiles').setLevel(logging.INFO)
 
 from agent.memory import RollingMemory
 
@@ -40,8 +41,6 @@ async def lifespan(app: FastAPI):
     finally:
         stop_scheduler()
         logging.info("Scheduler stopped successfully")
-
-        
 # Initialize FastAPI with ACP SDK and Magentic-One
 app = FastAPI(
     title="E-commerce Agent Service",
@@ -51,7 +50,6 @@ app = FastAPI(
     redoc_url="/redoc",
     lifespan=lifespan
 )
-
 # CORS middleware with configuration
 app.add_middleware(
     CORSMiddleware,

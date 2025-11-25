@@ -4,11 +4,12 @@ from pydantic import BaseModel
 
 from scraper.sitemap_analyzer import SitemapAnalyzer
 from scraper.dom_fetcher_async import AsyncDOMFetcher
-from scraper.utils import create_response, logger, log_step
+from scraper.utils import logger
 from scraper.aws_bedrock import process_urls_with_bedrock_and_generate_parser
 from scraper.aws_bedrock import process_urls_with_parser
 from scraper.db_saver import save_bedrock_products_to_db
 from scraper.formate_input import formate_raw_html 
+from config.mongo_con import client
 
 # Create router for scraper endpoints
 router = APIRouter(prefix="/scraper", tags=["scraper"])
@@ -16,6 +17,9 @@ router = APIRouter(prefix="/scraper", tags=["scraper"])
 
 sitemap_analyzer = SitemapAnalyzer()
 fetcher = AsyncDOMFetcher()
+
+collection = client["chat-bot"]
+indexes_coll = collection["scraping_stats"]
 
 # Request/Response Models
 class FullScrapeRequest(BaseModel):
@@ -60,9 +64,9 @@ async def full_scrape(request: FullScrapeRequest):
     Warning: Large sites may take hours and consume significant API tokens.
     """
     try:
-        log_step(f"Starting {'sitemap-enhanced' if request.sitemap_mode else 'single-page'} scrape for {request.url}")
-        
         # Log configuration
+        logger.info(f"Starting {'sitemap-enhanced' if request.sitemap_mode else 'single-page'} scrape for {request.url}")
+        
         if request.fast_mode:
             logger.info("⚡ Fast mode enabled - using aggressive optimizations")
         if request.sitemap_mode:
@@ -84,7 +88,7 @@ async def full_scrape(request: FullScrapeRequest):
         
         if request.sitemap_mode:
             # SITEMAP MODE: Multi-page scraping
-            logger.info("🔍 Step 0/6: Analyzing sitemap...")
+            logger.info(" Analyzing sitemap...")
             
             # Determine max_pages for analysis
             if request.complete_scraping and request.max_pages is None:
@@ -113,7 +117,7 @@ async def full_scrape(request: FullScrapeRequest):
             # NEW: Determine if script generation should be used
             domain = request.url.split('/')[2] if '/' in request.url else request.url
             use_script_gen = True
-            
+           
             # Process pages based on selected approach
             if use_script_gen and len(pages_to_scrape) >= 3:
                 # NEW: SCRIPT GENERATION APPROACH
@@ -127,7 +131,12 @@ async def full_scrape(request: FullScrapeRequest):
                         "parse_function": None,
                     }
                     
-                    for i, page_url in enumerate(pages_to_scrape, 1):
+                    start_index = 1
+                    doc = indexes_coll.find_one({"_id": domain})
+                    if doc and doc.get("processed_till"):
+                        start_index = int(doc["processed_till"])
+
+                    for i, page_url in enumerate(pages_to_scrape, start_index):
                         try:
                             scrape_stats['pages_attempted'] += 1
                             logger.info(f"Fetching page {i}/{len(pages_to_scrape)}: {page_url}")
@@ -152,28 +161,24 @@ async def full_scrape(request: FullScrapeRequest):
                                 bedrock_product=await process_urls_with_parser(dom_result.get("html"),bedrock_result.get("parse_function"))
                                 db_save_result = await save_bedrock_products_to_db(page_url,bedrock_product, tenant_id=domain)
                             
-                            if i%10==0:
-                                from config.mongo_con import client
-                                collection = client["chat-bot"]
-                                indexes_coll = collection["scraping_stats"]
-                                indexes_coll.update_one(
-                                {"_id": domain},                
-                                {
-                                  "$set": {
-                                  "processed_till": i
-                                  }
-                                },
-                                upsert=True  )
+                            indexes_coll.update_one(
+                            {"_id": domain},                
+                            {
+                                "$set": {
+                                "processed_till": i
+                                }
+                            },
+                            upsert=True  )
                             
                             
                         except Exception as e:
                             logger.error(f"Failed to fetch {page_url}: {e}")
                             scrape_stats['pages_failed'] += 1
                             continue
+                        
                     
                 except Exception as e:
                     logger.error(f"Script generation failed: {e}")
-                    logger.info("🔄 Falling back to traditional LLM analysis")
                     use_script_gen = False
             
             logger.info(f"🎉 {'COMPLETE WEBSITE SCRAPE' if request.complete_scraping else 'SITEMAP SCRAPE'} FINISHED!")
@@ -191,11 +196,11 @@ async def full_scrape(request: FullScrapeRequest):
                 'bedrock_products_count': len(bedrock_products),
             }
         
-        response_data = create_response(
+        response_data = {
             True,
             f"Scrape complete: {len(bedrock_products)} products extracted and saved to database",
             result
-        )
+        }
         
         return response_data
         

@@ -175,8 +175,9 @@ class MagenticAgent:
                 return "No relevant documents found."
             return "\n\n".join([f"Document {i+1}:\n{doc['text']}" for i, doc in enumerate(docs)])
         
-        def sql_query(question: str, tenant_id: str) -> str:
+        def sql_query(question: str) -> str:
             """Execute SQL query on database"""
+            tenant_id = self.tenant_id  # Access tenant_id stored on the instance
             result = self.sql_tool.run(question, tenant_id)
             if "error" in result:
                 return f"Error: {result['error']}"
@@ -259,7 +260,7 @@ class MagenticAgent:
             
             # Execute both tasks concurrently
             sql_result, rag_result = await asyncio.gather(
-                self._execute_sql(sql_task),
+                self._execute_sql(sql_task, tenant_id),
                 self._execute_rag(rag_task),
                 return_exceptions=True
             )
@@ -273,7 +274,7 @@ class MagenticAgent:
             return sql_result + "\n\n" + rag_result
             
         except Exception as e:
-            return await self._execute_sequential(query)
+            return await self._execute_sequential(query, tenant_id)
     
     async def _execute_sequential(self, query: str,tenant_id: str) -> str:
         """
@@ -287,7 +288,25 @@ class MagenticAgent:
    
         try:
             self._init_team()
-            result = await self._team.run(task=query, tenant_id=tenant_id)
+            self.tenant_id = tenant_id  # Store tenant_id for tools to access
+            result = await self._team.run(task=query)
+
+            # 🔍 DEBUG: Print all messages
+            # print("\n" + "="*80)
+            # print("🔍 SEQUENTIAL EXECUTION DEBUG")
+            # print("="*80)
+            # if result and result.messages:
+            #     for i, msg in enumerate(result.messages):
+            #         print(f"\n--- Message {i+1} ---")
+            #         print(f"Source: {msg.source}")
+            #         print(f"Type: {type(msg).__name__}")
+            #         print(f"Content: {msg.content[:200]}...")
+            #         if hasattr(msg, 'models_usage'):
+            #             print(f"Models Usage: {msg.models_usage}")
+            # print("="*80 + "\n")
+
+            # if result and result.messages:
+            #     return result.messages[-1].content
             
             if result and result.messages:
                 return result.messages[-1].content

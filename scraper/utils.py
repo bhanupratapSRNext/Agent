@@ -3,21 +3,38 @@ Utility functions for logging, error handling, and common operations.
 """
 import logging
 import sys
+from pathlib import Path
 from functools import wraps
 from typing import Any, Callable
 import traceback
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler('logs/scraper.log', mode='a')
-    ]
-)
+# Ensure logs directory exists
+Path('logs').mkdir(exist_ok=True)
 
-logger = logging.getLogger(__name__)
+# Get or create the scraper logger (isolated from root logger)
+logger = logging.getLogger('scraper')
+logger.setLevel(logging.INFO)
+
+# Only configure if not already configured (prevents duplicate handlers on re-import)
+if not logger.handlers:
+    # Create formatter
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    
+    # Console handler (stdout)
+    # console_handler = logging.StreamHandler(sys.stdout)
+    # console_handler.setLevel(logging.INFO)
+    # console_handler.setFormatter(formatter)
+    # logger.addHandler(console_handler)
+
+    
+    # File handler for scraper.log
+    file_handler = logging.FileHandler('logs/scraper.log', mode='a', encoding='utf-8')
+    file_handler.setLevel(logging.INFO)
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+    
+    # Prevent propagation to root logger (keeps scraper logs isolated)
+    logger.propagate = False
 
 
 def handle_errors(func: Callable) -> Callable:
@@ -40,51 +57,3 @@ def handle_errors(func: Callable) -> Callable:
             raise
     return wrapper
 
-
-def truncate_text(text: str, max_length: int = 100) -> str:
-    """
-    Truncate text to a maximum length.
-    
-    Args:
-        text: Text to truncate
-        max_length: Maximum length
-        
-    Returns:
-        Truncated text with ellipsis if needed
-    """
-    if len(text) <= max_length:
-        return text
-    return text[:max_length] + "..."
-
-
-def create_response(success: bool, message: str, data: Any = None) -> dict:
-    """
-    Create a standardized API response.
-    
-    Args:
-        success: Whether the operation was successful
-        message: Response message
-        data: Optional data to include
-        
-    Returns:
-        Standardized response dictionary
-    """
-    response = {
-        "success": success,
-        "message": message
-    }
-    if data is not None:
-        response["data"] = data
-    return response
-
-
-def log_step(step_name: str):
-    """
-    Log a processing step.
-    
-    Args:
-        step_name: Name of the step being executed
-    """
-    logger.info(f"{'='*50}")
-    logger.info(f"STEP: {step_name}")
-    logger.info(f"{'='*50}")

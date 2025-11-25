@@ -7,7 +7,7 @@ import httpx
 import asyncio
 from urllib.parse import urljoin, urlparse
 from typing import List, Dict, Optional, Set
-from scraper.utils import logger, log_step, handle_errors
+from scraper.utils import logger, handle_errors
 
 
 class SitemapAnalyzer:
@@ -52,7 +52,7 @@ class SitemapAnalyzer:
         Returns:
             Dictionary containing discovered URLs and analysis
         """
-        log_step(f"Analyzing sitemap for {base_url}")
+        logger.info(f"Analyzing sitemap for {base_url}")
         
         # Step 1: Discover sitemaps
         sitemap_urls = await self.discover_sitemaps(base_url)
