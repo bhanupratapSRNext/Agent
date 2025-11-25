@@ -135,8 +135,9 @@ async def full_scrape(request: FullScrapeRequest):
                     doc = indexes_coll.find_one({"_id": domain})
                     if doc and doc.get("processed_till"):
                         start_index = int(doc["processed_till"])
-
-                    for i, page_url in enumerate(pages_to_scrape, start_index):
+                    
+                    pages_to_process = pages_to_scrape[start_index - 1:]
+                    for i, page_url in enumerate(pages_to_process, start_index):
                         try:
                             scrape_stats['pages_attempted'] += 1
                             logger.info(f"Fetching page {i}/{len(pages_to_scrape)}: {page_url}")
@@ -153,8 +154,8 @@ async def full_scrape(request: FullScrapeRequest):
                             formated_html = await formate_raw_html(dom_result.get("html"))
 
                             dom_result['html']=formated_html
-                            
-                            if i<3 and bedrock_result.get("status")==False: #use the LLM to generate a parse function
+
+                            if i<3 and bedrock_result.get("status")==False or i>3 and bedrock_result.get("status")==False: #use the LLM to generate a parse function
                                 bedrock_result = await process_urls_with_bedrock_and_generate_parser(dom_result)
                                 
                             if bedrock_result and bedrock_result.get("status") == True:
