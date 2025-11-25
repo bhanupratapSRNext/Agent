@@ -150,7 +150,7 @@ async def full_scrape(request: FullScrapeRequest):
                                 
                             if bedrock_result and bedrock_result.get("status") == True:
                                 bedrock_product=await process_urls_with_parser(dom_result.get("html"),bedrock_result.get("parse_function"))
-                                db_save_result = await save_bedrock_products_to_db(bedrock_product, tenant_id=domain)
+                                db_save_result = await save_bedrock_products_to_db(page_url,bedrock_product, tenant_id=domain)
                             
                             if i%10==0:
                                 from config.mongo_con import client

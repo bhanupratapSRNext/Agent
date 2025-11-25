@@ -81,8 +81,8 @@ class ProductDBSaver:
             logger.error(f"❌ Failed to create table: {e}")
             self.connection.rollback()
             return False
-    
-    def save_products(self, products: List[Dict[str, Any]], tenant_id: str = None) -> Dict[str, Any]:
+
+    def save_products(self, page_url:str, products: List[Dict[str, Any]], tenant_id: str = None) -> Dict[str, Any]:
         """
         Save products to database.
         
@@ -137,7 +137,7 @@ class ProductDBSaver:
                 try:
                     # Extract values with None as default to allow NULL in database
                     product_tenant_id = tenant_id
-                    source_url = product.get('source_url')
+                    source_url = page_url
                     product_url = product.get('image')
                     title = product.get('title', product.get('name'))
                     price = product.get('price', product.get('regular_price'))
@@ -185,7 +185,7 @@ class ProductDBSaver:
         }
 
 
-async def save_bedrock_products_to_db(products: List[Dict[str, Any]], tenant_id: str = None) -> Dict[str, Any]:
+async def save_bedrock_products_to_db( page_url:str, products: List[Dict[str, Any]], tenant_id: str = None) -> Dict[str, Any]:
     """
     Async wrapper to save Bedrock extracted products to PostgreSQL.
     
@@ -199,7 +199,7 @@ async def save_bedrock_products_to_db(products: List[Dict[str, Any]], tenant_id:
     logger.info(f"\n💾 Saving {len(products)} products to PostgreSQL database...")
     
     saver = ProductDBSaver()
-    result = saver.save_products(products, tenant_id)
+    result = saver.save_products(page_url, products, tenant_id)
     
     if result['success']:
         logger.info(f"✅ Database save complete: {result['message']}")
