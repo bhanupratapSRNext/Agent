@@ -86,7 +86,7 @@ class ACPConfig:
     def get_cors_config(cls) -> Dict[str, Any]:
         """Get CORS configuration"""
         return {
-            "allow_origins": cls.CORS_ORIGINS,
+            "allow_origins": ["*"], 
             "allow_credentials": cls.CORS_ALLOW_CREDENTIALS,
             "allow_methods": ["*"],
             "allow_headers": ["*"]
