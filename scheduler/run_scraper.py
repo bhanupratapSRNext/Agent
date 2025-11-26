@@ -42,7 +42,6 @@ async def process_pending_configurations():
             "progress": "pending"
         })
         
-        # Convert cursor to list
         pending_list = list(pending_configs)
         
         if not pending_list:
@@ -54,7 +53,7 @@ async def process_pending_configurations():
         for config in pending_list:
             try:
                 config_id = config.get("_id")
-                user_id = config.get("user_id", "unknown")
+                user_id = config.get("user_id")
                 index_name = config.get("index_name")
                 root_url = config.get("root_url")
 
@@ -68,7 +67,6 @@ async def process_pending_configurations():
                 result = await setup_user_agent_and_scrape(
                     user_id=user_id,
                     index_name=index_name,
-                    root_url=root_url,
                 )
                 
                 # Update based on result
@@ -97,7 +95,6 @@ async def process_pending_configurations():
                         {"_id": config_id},
                         {
                             "$set": {
-                                "processing_completed_at": datetime.utcnow(),
                                 "status": "failed",
                                 "last_error": result.get("error", "Unknown error"),
                                 "progress": "pending"
@@ -114,10 +111,9 @@ async def process_pending_configurations():
                         {"_id": config_id},
                         {
                             "$set": {
-                                "processing_completed_at": datetime.utcnow(),
                                 "status": "failed",
                                 "last_error": str(e),
-                                "progress": "failed"
+                                "progress": "pending"
                             }
                         }
                     )

@@ -105,8 +105,11 @@ async def formate_raw_html(
         # Remove elements with display:none or visibility:hidden in inline styles
         # Note: Can't catch CSS-based hiding after removing <style> tags
         for tag in soup.find_all():
-            if tag.get('hidden') is not None or tag.get('aria-hidden') == 'true':
-                tag.decompose()
+            try:
+                if tag.get('hidden') is not None or tag.get('aria-hidden') == 'true':
+                    tag.decompose()
+            except Exception:
+                continue
     
     # ===== STEP 7: Remove common useless attributes =====
     useless_attrs = [

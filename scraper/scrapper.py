@@ -19,11 +19,13 @@ sitemap_analyzer = SitemapAnalyzer()
 fetcher = AsyncDOMFetcher()
 
 collection = client["chat-bot"]
-indexes_coll = collection["scraping_stats"]
+indexes_coll = collection["Configuration"]
 
 # Request/Response Models
 class FullScrapeRequest(BaseModel):
     url: str
+    user_id: str
+    index_name: str
     scroll: Optional[bool] = False
     format: Optional[str] = "json"
     fast_mode: Optional[bool] = False
@@ -64,6 +66,8 @@ async def full_scrape(request: FullScrapeRequest):
     Warning: Large sites may take hours and consume significant API tokens.
     """
     try:
+        index_name=request.index_name
+        user_id=request.user_id
         # Log configuration
         logger.info(f"Starting {'sitemap-enhanced' if request.sitemap_mode else 'single-page'} scrape for {request.url}")
         
@@ -163,13 +167,15 @@ async def full_scrape(request: FullScrapeRequest):
                                 db_save_result = await save_bedrock_products_to_db(page_url,bedrock_product, tenant_id=domain)
                             
                             indexes_coll.update_one(
-                            {"_id": domain},                
-                            {
+                                {
+                                  "user_id": user_id,
+                                 "index_name": index_name },
+                                {
                                 "$set": {
-                                "processed_till": i
-                                }
-                            },
-                            upsert=True  )
+                                 "scrap_state.processed_till": i
+                              }
+                                }, )
+
                             
                             
                         except Exception as e:

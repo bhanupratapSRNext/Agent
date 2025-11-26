@@ -28,7 +28,6 @@ user_configs_coll = collection["Configuration"]
 async def setup_user_agent_and_scrape(
     user_id: str,
     index_name: str,
-    root_url: str,
 ) -> Dict[str, Any]:
     """
     Complete setup for user agent:
@@ -50,7 +49,9 @@ async def setup_user_agent_and_scrape(
     """
     try:
         # Step 1: Fetch user details from MongoDB
-        user_config = user_configs_coll.find_one({'user_id': user_id})
+        user_config = user_configs_coll.find_one({
+                                        'user_id': user_id,
+                                         "index_name": index_name})
         
         if not user_config:
             return {
@@ -84,10 +85,10 @@ async def setup_user_agent_and_scrape(
         
         # Check if index already exists
         existing_indexes = [idx["name"] for idx in pc.list_indexes().indexes]
-        metric = user_config.get("metric")
-        dimension = user_config.get("dimension")
-        cloud = user_config.get("cloud")
-        region = user_config.get("region")
+        metric = user_config.get("vector_data", {}).get("metric")
+        dimension = user_config.get("vector_data", {}).get("dimension")
+        cloud = user_config.get("vector_data", {}).get("cloud")
+        region = user_config.get("vector_data", {}).get("region")
 
 
         index_created = False
@@ -120,6 +121,8 @@ async def setup_user_agent_and_scrape(
         
         # Prepare scrape request payload
         scrape_payload = {
+            "index_name": index_name,
+            "user_id": user_id,
             "url": root_url,
             "scroll": False,
             "format": "json",
@@ -154,7 +157,8 @@ async def setup_user_agent_and_scrape(
         }
         
         user_configs_coll.update_one(
-            {'user_id': user_id},
+            {'user_id': user_id,  
+             'index_name': index_name },
             {'$set': update_data}
         )
         
@@ -184,38 +188,4 @@ async def setup_user_agent_and_scrape(
             "error": f"Error setting up user agent: {str(e)}",
             "user_id": user_id,
             "index_name": index_name
-        }
-
-
-def get_user_config(user_id: str) -> Dict[str, Any]:
-    """
-    Get user agent configuration from MongoDB
-    
-    Args:
-        user_id: User ID to fetch configuration for
-        
-    Returns:
-        User configuration details
-    """
-    try:
-        user_config = user_configs_coll.find_one({'user_id': user_id}, {'_id': 0})
-        
-        if not user_config:
-            return {
-                "success": False,
-                "error": f"User configuration not found for user_id: {user_id}",
-                "user_id": user_id
-            }
-        
-        return {
-            "success": True,
-            "user_id": user_id,
-            "config": user_config
-        }
-        
-    except Exception as e:
-        return {
-            "success": False,
-            "error": f"Error fetching user configuration: {str(e)}",
-            "user_id": user_id
         }
