@@ -11,6 +11,7 @@ import tempfile
 import shutil
 from pathlib import Path
 from config.mongo_con import client
+from datetime import datetime
 
 try:
     from pinecone.grpc import PineconeGRPC as Pinecone
@@ -23,6 +24,8 @@ load_dotenv()
 
 router = APIRouter(prefix="/configure", tags=["Pinecone Management"])
 
+collection = client["chat-bot"]
+Configuration = collection["Configuration"]
 
 class CreateIndexRequest(BaseModel):
     """Request model for creating a Pinecone index"""
@@ -89,6 +92,22 @@ class CreateEmbeddingsResponse(BaseModel):
     upserted_count: int | None = None
 
 
+
+class SaveURLRequest(BaseModel):
+    """Request model for saving URL to Configuration"""
+    root_url: str = Field(..., description="Website URL to save")
+    user_id: str = Field(..., description="Optional user ID")
+    index_name: Optional[str] = Field(None, description="Optional index name associated with the URL")
+
+
+class SaveURLResponse(BaseModel):
+    """Response model for URL save operation"""
+    success: bool
+    message: str
+    url: str
+    mongo_id: Optional[str] = None
+
+
 @router.post("/create-index", response_model=CreateIndexResponse, status_code=status.HTTP_201_CREATED)
 async def create_index(request: CreateIndexRequest):
     try:
@@ -100,7 +119,13 @@ async def create_index(request: CreateIndexRequest):
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Pinecone API key not provided and not found in environment variables"
             )
-        
+
+        if not request.index_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Index name is required"
+            )
+
         # Initialize Pinecone client
         pc = Pinecone(api_key=api_key)
         
@@ -131,25 +156,53 @@ async def create_index(request: CreateIndexRequest):
                 detail=f"Invalid metric. Must be one of: {', '.join(valid_metrics)}"
             )
         
-        # MongoDB setup
-        collection = client["chat-bot"]
-        pinecone_indexes_coll = collection["Configuration"]
         
-        # Save index metadata to MongoDB before creating in Pinecone
+        # Save index metadata to MongoDB
         index_metadata = {
             "index_name": request.index_name,
-            "dimension": request.dimension,
-            "metric": request.metric,
-            "cloud": request.cloud,
-            "region": request.region,
-            "created_at": None,  # Will be updated after successful creation
-            "status": "creating",
+            "vector_data": {
+                "dimension": request.dimension,
+                "metric": request.metric,
+                "cloud": request.cloud,
+                "region": request.region,
+                "created_at": datetime.utcnow()
+            },
             "user_id":request.user_id,
             "processed":False
         }
         
+        existing_mongo_index = Configuration.find_one({
+                "index_name": request.index_name,
+                 "user_id": request.user_id  })
+
+        if existing_mongo_index:
+            if existing_mongo_index.get("root_url"):
+                return CreateIndexResponse(
+                    success=False,
+                    message=f"Index '{request.index_name}' already has a root URL. Try a different name.",
+                    index_name=request.index_name,
+                    details={
+                        "mongo_id": str(existing_mongo_index.get("_id")),
+                        "rooturl": existing_mongo_index.get("root_url"),
+                        "already_exists_rooturl": True
+                    }
+                )
+            
+            return CreateIndexResponse(
+                success=True,
+                message=f"Index '{request.index_name}' already exists",
+                index_name=request.index_name,
+                details={
+                    "dimension": existing_mongo_index.get("dimension"),
+                    "metric": existing_mongo_index.get("metric"),
+                    "cloud": existing_mongo_index.get("cloud"),
+                    "region": existing_mongo_index.get("region"),
+                    "mongo_id": str(existing_mongo_index.get("_id")),
+                    "already_exists_in_mongo": True
+                }
+            )
         # Insert into MongoDB
-        mongo_result = pinecone_indexes_coll.insert_one(index_metadata)
+        mongo_result = Configuration.insert_one(index_metadata)
         
         return CreateIndexResponse(
             success=True,
@@ -175,20 +228,6 @@ async def create_index(request: CreateIndexRequest):
 
 
 
-class SaveURLRequest(BaseModel):
-    """Request model for saving URL to Configuration"""
-    root_url: str = Field(..., description="Website URL to save")
-    user_id: Optional[str] = Field(None, description="Optional user ID")
-
-
-class SaveURLResponse(BaseModel):
-    """Response model for URL save operation"""
-    success: bool
-    message: str
-    url: str
-    mongo_id: Optional[str] = None
-
-
 @router.post("/save", response_model=SaveURLResponse)
 async def save_url(request: SaveURLRequest):
     """
@@ -201,32 +240,34 @@ async def save_url(request: SaveURLRequest):
         SaveURLResponse with save/update status
     """
     try:
-        # MongoDB setup
-        collection = client["chat-bot"]
-        configuration_coll = collection["Configuration"]
-        
         # Validate that user_id is provided
         if not request.user_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="user_id is required to save URL"
             )
-        
+        if not request.index_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="index_name is required to save URL"
+            )
         # Check if document exists for this user_id
-        existing_config = configuration_coll.find_one({"user_id": request.user_id})
+        existing_config = Configuration.find_one({
+            "user_id": request.user_id,
+            "index_name": request.index_name
+        })
         
-        from datetime import datetime
+        
         
         if existing_config:
             # Update existing document
             update_data = {
                 "root_url": request.root_url,
-                "updated_at": datetime.utcnow(),
-                "status": "updated",
+                "root_url_added_at": datetime.utcnow(),
                 "progress": "pending"
             }
             
-            configuration_coll.update_one(
+            Configuration.update_one(
                 {"user_id": request.user_id},
                 {"$set": update_data}
             )

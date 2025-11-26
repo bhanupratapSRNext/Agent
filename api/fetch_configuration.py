@@ -16,19 +16,47 @@ load_dotenv()
 router = APIRouter(prefix="/fetch-configuration", tags=["configuration"])
 # MongoDB setup
 collection = client["chat-bot"]
-user_configs_coll = collection["Configuration"]
+script_configs = collection["script"]
 
 
 class FetchConfigResponse(BaseModel):
     """Response model for fetch configuration"""
     success: bool
+    user_id: str
     message: Optional[str] = None
-    data: Optional[Dict[str, Any]] = None
+    data: str = None
+    error: Optional[str] = None
+
+class FetchConfigRequest(BaseModel):
+    """Request model for fetch configuration"""
+    user_id: str
+
+
+class FetchConfigRequest(BaseModel):
+    """Request model for fetch configuration"""
+    user_id: str
+
+
+class ConfigItem(BaseModel):
+    """Single configuration item summary"""
+    Index: str
+    Status: Optional[str] = None
+    URL: Optional[str] = None
+    scrape_status: Optional[bool] = False
+    # you can add more fields here if needed
+
+
+class FetchConfigListResponse(BaseModel):
+    """Response model for listing configurations"""
+    success: bool
+    user_id: str
+    message: Optional[str] = None
+    data: List[ConfigItem] = []
     error: Optional[str] = None
 
 
-@router.get("/detail", response_model=FetchConfigResponse)
-async def fetch_configuration(request: Request, user_id: Optional[str] = None):
+@router.post("/detail", response_model=FetchConfigResponse)
+async def fetch_configuration(request: FetchConfigRequest):
     """
     Fetch configuration from MongoDB based on user_id with filters:
     - processed: true
@@ -41,11 +69,8 @@ async def fetch_configuration(request: Request, user_id: Optional[str] = None):
     Returns:
         Configuration data matching the criteria
     """
-    try:
-        # Get user_id from query parameter or request headers
-        if not user_id:
-            # Try to get from Authorization header or request state (if JWT is being used)
-            user_id = request.headers.get("X-User-ID") or getattr(request.state, "user_id", None)
+    try:   
+        user_id = request.user_id
         
         if not user_id:
             raise HTTPException(
@@ -53,27 +78,22 @@ async def fetch_configuration(request: Request, user_id: Optional[str] = None):
                 detail="user_id is required either as query parameter or in request headers"
             )
         
-        # Query MongoDB with filters
-        query = {
-            "user_id": user_id,
-            "processed": True,
-            "scrape_status": "completed"
-        }
+        config_doc = script_configs.find_one({"user_id": user_id})
         
-        # Find configuration matching the criteria
-        config = user_configs_coll.find_one(query, {"_id": 0})
-        
-        if not config:
+        if not config_doc:
             return FetchConfigResponse(
                 success=False,
                 message=f"No completed configuration found for user_id: {user_id}",
                 data=None
             )
-        
+         # Convert ObjectId to string
+        script_text = config_doc.get("script", None)
+
         return FetchConfigResponse(
             success=True,
-            message="Configuration retrieved successfully",
-            data=config
+            user_id=user_id,
+            message="Configuration fetched successfully",
+            data=script_text
         )
         
     except HTTPException:
@@ -85,110 +105,57 @@ async def fetch_configuration(request: Request, user_id: Optional[str] = None):
         )
 
 
-@router.post("/fetch-configuration", response_model=FetchConfigResponse)
-async def fetch_configuration_post(request: Request):
+
+
+@router.post("/list", response_model=FetchConfigListResponse)
+async def list_configurations(request: FetchConfigRequest):
     """
-    POST version: Fetch configuration from MongoDB based on user_id from request body
-    
-    Filters:
-    - processed: true
-    - scrape_status: "completed"
-    
-    Request body should contain:
-    {
-        "user_id": "string"
-    }
-    
-    Returns:
-        Configuration data matching the criteria
+    List all configurations for a given user_id.
+    You can optionally filter by processed/scrape_status.
     """
     try:
-        # Parse request body
-        body = await request.json()
-        user_id = body.get("user_id")
-        
+        user_id = request.user_id
+
         if not user_id:
             raise HTTPException(
                 status_code=400,
-                detail="user_id is required in request body"
+                detail="user_id is required"
             )
-        
-        # Query MongoDB with filters
-        query = {
-            "user_id": user_id,
-            "processed": True,
-            "scrape_status": "completed"
-        }
-        
-        # Find configuration matching the criteria
-        config = user_configs_coll.find_one(query, {"_id": 0})
-        
-        if not config:
-            return FetchConfigResponse(
+
+        query = {"user_id": user_id}
+        Configuration = collection["Configuration"]
+        cursor = Configuration.find(query)
+
+        configs: List[ConfigItem] = []
+
+        for doc in cursor:
+            configs.append(
+                ConfigItem(
+                    Index=str(doc.get("index_name")),
+                    Status=doc.get("progress"),
+                    URL=doc.get("root_url")
+                )
+            )
+
+        if not configs:
+            return FetchConfigListResponse(
                 success=False,
-                message=f"No completed configuration found for user_id: {user_id}",
-                data=None
+                user_id=user_id,
+                message=f"No configurations found for user_id: {user_id}",
+                data=[]
             )
-        
-        return FetchConfigResponse(
+
+        return FetchConfigListResponse(
             success=True,
-            message="Configuration retrieved successfully",
-            data=config
+            user_id=user_id,
+            message=f"Found {len(configs)} configurations for user_id: {user_id}",
+            data=configs
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Error fetching configuration: {str(e)}"
-        )
-
-
-@router.get("/fetch-all-configurations")
-async def fetch_all_configurations(request: Request, user_id: Optional[str] = None):
-    """
-    Fetch all completed configurations for a user (returns list)
-    
-    Args:
-        request: FastAPI request object
-        user_id: Optional user_id as query parameter
-        
-    Returns:
-        List of all configurations matching the criteria
-    """
-    try:
-        # Get user_id from query parameter or request headers
-        if not user_id:
-            user_id = request.headers.get("X-User-ID") or getattr(request.state, "user_id", None)
-        
-        if not user_id:
-            raise HTTPException(
-                status_code=400,
-                detail="user_id is required either as query parameter or in request headers"
-            )
-        
-        # Query MongoDB with filters
-        query = {
-            "user_id": user_id,
-            "processed": True,
-            "scrape_status": "completed"
-        }
-        
-        # Find all configurations matching the criteria
-        configs = list(user_configs_coll.find(query, {"_id": 0}))
-        
-        return {
-            "success": True,
-            "message": f"Found {len(configs)} completed configuration(s)",
-            "count": len(configs),
-            "data": configs
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error fetching configurations: {str(e)}"
+            detail=f"Error listing configurations: {str(e)}"
         )
