@@ -136,9 +136,13 @@ async def full_scrape(request: FullScrapeRequest):
                     }
                     
                     start_index = 1
-                    doc = indexes_coll.find_one({"_id": domain})
-                    if doc and doc.get("processed_till"):
-                        start_index = int(doc["processed_till"])
+                    doc = indexes_coll.find_one({"root_url": request.url})
+                    if doc:
+                        scrap_state = doc.get("scrap_state", {})
+                        processed_till = scrap_state.get("processed_till")
+
+                        if processed_till:
+                            start_index = int(processed_till)
                     
                     pages_to_process = pages_to_scrape[start_index - 1:]
                     for i, page_url in enumerate(pages_to_process, start_index):
