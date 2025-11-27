@@ -70,6 +70,8 @@ class AsyncDOMFetcher:
                     java_script_enabled=True,
                     ignore_https_errors=True,
                 )
+
+                await context.clear_cookies()
                 
                 # Adaptive resource blocking based on mode
                 async def block_resources(route):

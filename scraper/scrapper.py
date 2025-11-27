@@ -10,7 +10,8 @@ from scraper.aws_bedrock import process_urls_with_parser
 from scraper.db_saver import save_bedrock_products_to_db
 from scraper.formate_input import formate_raw_html 
 from config.mongo_con import client
-
+import random
+import time
 # Create router for scraper endpoints
 router = APIRouter(prefix="/scraper", tags=["scraper"])
 
@@ -152,6 +153,10 @@ async def full_scrape(request: FullScrapeRequest):
                         
                             # Determine SPA mode
                             spa_mode = request.spa_mode if request.spa_mode is not None else True
+                            
+                            wait_time = random.randint(2, 5)
+                            time.sleep(wait_time)
+                            logger.info(f"Waiting randomly for {wait_time} seconds before fetching...")
                             
                             # Fetch DOM
                             if request.scroll:
